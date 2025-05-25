@@ -161,6 +161,7 @@ def login_view(request):
     return render(request, 'login.html')
 
 
+#Metodo de inicio
 def inicio(request):
     if 'firebase_uid' in request.session and 'firebase_id_token' in request.session:
         id_token = request.session['firebase_id_token']
