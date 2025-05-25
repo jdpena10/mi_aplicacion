@@ -1,0 +1,9 @@
+<form method="POST" action="{% url 'eliminar_cuenta' %}" onsubmit="return confirm('¿Estás seguro de que deseas eliminar tu cuenta y todos tus datos? Esta acción no se puede deshacer.');">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-danger">🗑️ Eliminar mi cuenta</button>
+</form>
+
+<!-- Botón para volver a la página anterior -->
+<button type="button" class="btn btn-secondary mt-3" onclick="history.back()">← Volver</button>
+
+

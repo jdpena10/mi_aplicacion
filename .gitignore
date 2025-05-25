@@ -1,0 +1,3 @@
+echo "firebase.py" >> .gitignore
+echo "firebase_config.py" >> .gitignore
+echo "settings.py" >> .gitignore

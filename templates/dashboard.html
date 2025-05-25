@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Gestión de Usuarios</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 40px;
+      background-color: #f5f7fa;
+      color: #333;
+    }
+
+    h1 {
+      color: #2c3e50;
+      border-bottom: 2px solid #3498db;
+      padding-bottom: 10px;
+      margin-bottom: 30px;
+    }
+
+    .home-btn {
+      display: inline-block;
+      padding: 8px 16px;
+      background: linear-gradient(to right, #4a6ef1, #1e3c72);
+      color: white;
+      text-decoration: none;
+      border-radius: 5px;
+      font-weight: bold;
+    }
+
+    .home-btn:hover {
+      background-color: #5dafe6;
+    }
+
+    a {
+      color: #3498db;
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .message {
+      margin-bottom: 20px;
+      padding: 10px 15px;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+
+    .message.success {
+      background-color: #dff0d8;
+      color: #3c763d;
+    }
+
+    .message.error {
+      background-color: #f2dede;
+      color: #a94442;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background-color: white;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.05);
+    }
+
+    th, td {
+      text-align: left;
+      padding: 12px;
+      border-bottom: 1px solid #ddd;
+    }
+
+    th {
+      background: linear-gradient(to right, #4a6ef1, #1e3c72);
+      color: white;
+    }
+
+    tr:hover {
+      background-color: #f1f1f1;
+    }
+
+    .actions a,
+    .actions button {
+      margin-right: 10px;
+    }
+
+    .actions form {
+      display: inline;
+    }
+
+    .actions button {
+      background-color: #e74c3c;
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .actions button:hover {
+      background-color: #c0392b;
+    }
+
+    .crear-usuario-link {
+      display: inline-block;
+      margin-bottom: 20px;
+      padding: 8px 16px;
+      background-color: #1a7540;
+      color: white;
+      border-radius: 5px;
+      text-decoration: none;
+      font-weight: bold;
+    }
+
+    .crear-usuario-link:hover {
+      background-color: #3fcb79;
+    }
+  </style>
+</head>
+<body>
+
+  <a href="{% url 'inicio' %}" class="home-btn">🏠 Home</a>
+
+  <h1>Gestión de usuarios</h1>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="message {{ message.tags }}">
+        {{ message }}
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  <a href="{% url 'crear_usuario' %}" class="crear-usuario-link">➕ Crear nuevo usuario</a>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Nombre</th>
+        <th>Email</th>
+        <th>Rol</th>
+        <th>Acciones</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for key, usuario in usuarios.items %}
+        <tr>
+          <td>{{ usuario.nombre }}</td>
+          <td>{{ usuario.email }}</td>
+          <td>{{ usuario.rol }}</td>
+          <td class="actions">
+            {% if usuario.uid %}
+              <a href="{% url 'editar_usuario' usuario.uid %}">✏️ Editar</a>
+              <form action="{% url 'eliminar_usuario' usuario.uid %}" method="post" onsubmit="return confirm('¿Seguro que quieres eliminar este usuario?');">
+                {% csrf_token %}
+                <button type="submit">🗑️ Eliminar</button>
+              </form>
+            {% else %}
+              <span>UID inválido</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="4">No hay usuarios registrados.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+</body>
+
+</html>
+

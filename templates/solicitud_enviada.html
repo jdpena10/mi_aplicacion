@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Solicitud Enviada</title>
+</head>
+<body>
+    {% if tipo_mensaje == "bienvenida" %}
+        <h1>¡Bienvenido al tablero!</h1>
+        <p>Has accedido correctamente al tablero compartido.</p>
+        <a href="{% url 'ver_tablero' tablero_id=tablero_id %}">Ver Tablero</a>
+    {% else %}
+        <h1>Solicitud enviada con éxito</h1>
+        <p>Se ha enviado una notificación al inivtado.</p>
+        <a href="{% url 'ver_tablero' tablero_id=tablero_id %}">Volver al Tablero</a>
+    {% endif %}
+</body>
+</html>
+
+
+

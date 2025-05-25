@@ -1,0 +1,163 @@
+{% block content %}
+
+<style>
+    body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background-color: #f4f6f8;
+        margin: 0;
+        padding: 0;
+    }
+
+    .tableros-container {
+        max-width: 800px;
+        margin: 50px auto;
+        padding: 30px;
+        background-color: #ffffff;
+        border-radius: 16px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+    }
+
+    .top-buttons {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 30px;
+    }
+
+    h2 {
+        font-size: 28px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        color: #1e3c72;
+    }
+
+    h2::before {
+        content: "📋";
+        font-size: 28px;
+        margin-right: 10px;
+    }
+
+    .crear-btn,
+    .home-btn {
+        display: inline-block;
+        background: linear-gradient(to right, #4a6ef1, #1e3c72);
+        color: #fff;
+        padding: 6px 12px; /* más pequeños */
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 14px; /* tamaño de fuente reducido */
+        text-decoration: none;
+        transition: background 0.3s ease;
+    }
+
+    .crear-btn:hover,
+    .home-btn:hover {
+        background: linear-gradient(to right, #5d7ff4, #2d4a8a);
+    }
+
+    ul {
+        list-style: none;
+        padding-left: 0;
+    }
+
+    li {
+        padding: 12px 18px;
+        background-color: #f0f4fc;
+        margin-bottom: 12px;
+        border-radius: 10px;
+        transition: background 0.2s ease;
+    }
+
+    li:hover {
+        background-color: #e0e8f8;
+    }
+
+    li a {
+        text-decoration: none;
+        color: #1e3c72;
+        font-weight: 600;
+    }
+
+    .no-tableros {
+        color: #888;
+        font-size: 16px;
+        margin-top: 20px;
+        display: flex;
+        align-items: center;
+    }
+
+    .no-tableros::before {
+        content: "😯";
+        font-size: 20px;
+        margin-right: 8px;
+    }
+
+    .tablero-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding-right: 30px;
+        margin-bottom: 10px;
+    }
+
+    .eliminar-btn {
+        margin-left: 20px;
+    }
+</style>
+
+<div class="tableros-container">
+    <div class="top-buttons">
+        <a href="{% url 'crear_tablero' %}" class="crear-btn">➕ Crear nuevo tablero</a>
+        <a href="{% url 'inicio' %}" class="home-btn">🏠 Home</a>
+    </div>
+
+    <h2>Mis Tableros</h2>
+
+    {% if tableros %}
+        <ul id="lista-tableros">
+            {% for tablero_id, tablero in tableros.items %}
+                <li id="tablero-{{ tablero_id }}" class="tablero-item">
+                    <a href="{% url 'ver_tablero' tablero_id=tablero_id %}">
+                        {{ tablero.nombre }}
+                    </a>
+                    <button class="eliminar-btn" onclick="eliminarTablero('{{ tablero_id }}')">🗑 Eliminar</button>
+                </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p class="no-tableros">No tienes tableros aún.</p>
+    {% endif %}
+</div>
+
+<script>
+    function eliminarTablero(tableroId) {
+        if (!confirm('¿Estás seguro de que deseas eliminar este tablero?')) return;
+
+        fetch("{% url 'listar_tableros' %}", {
+            method: "POST",
+            headers: {
+                "X-CSRFToken": "{{ csrf_token }}",
+                "X-Requested-With": "XMLHttpRequest",
+                "Content-Type": "application/x-www-form-urlencoded"
+            },
+            body: new URLSearchParams({ tablero_id: tableroId })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const elemento = document.getElementById("tablero-" + tableroId);
+                if (elemento) {
+                    elemento.remove();
+                }
+            } else {
+                alert("Error al eliminar tablero: " + (data.error || 'desconocido'));
+            }
+        })
+        .catch(error => {
+            alert("Error de red al eliminar tablero: " + error);
+        });
+    }
+</script>
+
+{% endblock %}

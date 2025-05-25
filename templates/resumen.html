@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Resumen de Tareas</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        canvas {
+            max-width: 500px;
+            height: 400px;
+            margin: 20px auto;
+            display: block;
+        }
+
+        .centrado {
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Resumen del Tablero: {{ nombre_tablero }}</h1>
+
+    <ul>
+        <li><strong>Total:</strong> {{ total_tareas }}</li>
+        <li><strong>Completadas:</strong> {{ tareas_completadas }}</li>
+        <li><strong>Pendientes:</strong> {{ tareas_pendientes }}</li>
+        <li><strong>Vencidas:</strong> {{ tareas_vencidas }}</li>
+    </ul>
+
+
+
+    <canvas id="graficaTareasPie"></canvas>
+    <canvas id="graficaTareasBar"></canvas>
+    <canvas id="graficaTareasScatter"></canvas>
+
+    <script>
+        const tareasCompletadas = {{ tareas_completadas }};
+        const tareasPendientes = {{ tareas_pendientes }};
+        const tareasVencidas = {{ tareas_vencidas }};
+
+        // Gráfico de Pastel
+        const ctxPie = document.getElementById('graficaTareasPie').getContext('2d');
+        new Chart(ctxPie, {
+            type: 'pie',
+            data: {
+                labels: ['Completadas', 'Pendientes', 'Vencidas'],
+                datasets: [{
+                    data: [tareasCompletadas, tareasPendientes, tareasVencidas],
+                    backgroundColor: ['#4CAF50', '#FFC107', '#F44336'],
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { position: 'bottom' },
+                    title: { display: true, text: 'Distribución de tareas (Pastel)' }
+                }
+            }
+        });
+
+        // Gráfico de Barras
+        const ctxBar = document.getElementById('graficaTareasBar').getContext('2d');
+        new Chart(ctxBar, {
+            type: 'bar',
+            data: {
+                labels: ['Completadas', 'Pendientes', 'Vencidas'],
+                datasets: [{
+                    label: 'Número de tareas',
+                    data: [tareasCompletadas, tareasPendientes, tareasVencidas],
+                    backgroundColor: ['#4CAF50', '#FFC107', '#F44336'],
+                    borderColor: ['#388E3C', '#FFA000', '#D32F2F'],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: { stepSize: 1 }
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    title: { display: true, text: 'Distribución de tareas (Barras)' }
+                }
+            }
+        });
+
+        // Gráfico de Dispersión
+        const ctxScatter = document.getElementById('graficaTareasScatter').getContext('2d');
+        const scatterData = {
+            datasets: [{
+                label: 'Tareas por categoría',
+                data: [
+                    { x: 1, y: tareasCompletadas, label: 'Completadas' },
+                    { x: 2, y: tareasPendientes, label: 'Pendientes' },
+                    { x: 3, y: tareasVencidas, label: 'Vencidas' }
+                ],
+                backgroundColor: ['#4CAF50', '#FFC107', '#F44336'],
+                pointRadius: 8
+            }]
+        };
+        new Chart(ctxScatter, {
+            type: 'scatter',
+            data: scatterData,
+            options: {
+                responsive: true,
+                scales: {
+                    x: {
+                        type: 'linear',
+                        position: 'bottom',
+                        ticks: { stepSize: 1 }
+                    },
+                    y: {
+                        title: { display: true, text: 'Cantidad de tareas' },
+                        beginAtZero: true,
+                        ticks: { stepSize: 1 }
+                    }
+                },
+                plugins: {
+                    legend: { position: 'top' },
+                    title: { display: true, text: 'Gráfico de Dispersión' }
+                }
+            }
+        });
+
+        // Función para generar el PDF
+        async function descargarGraficosEnPDF() {
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF({
+                orientation: 'portrait',
+                unit: 'mm',
+                format: 'a4'
+            });
+
+            // Factor de conversión: 1 pulgada = 25.4 mm; 1 pulgada = 96 px (estándar pantalla)
+            const pxToMm = 25.4 / 96;
+
+            const canvasIds = [
+                { id: 'graficaTareasPie', titulo: 'Distribución de tareas (Pastel)' },
+                { id: 'graficaTareasBar', titulo: 'Distribución de tareas (Barras)' },
+                { id: 'graficaTareasScatter', titulo: 'Gráfico de Dispersión' }
+            ];
+
+            for (let i = 0; i < canvasIds.length; i++) {
+                const { id, titulo } = canvasIds[i];
+                const canvas = document.getElementById(id);
+
+                // Usar tamaño real del canvas
+                const widthPx = canvas.width;
+                const heightPx = canvas.height;
+
+                // Crear canvas temporal para asegurar buena calidad
+                const tmpCanvas = document.createElement('canvas');
+                tmpCanvas.width = widthPx;
+                tmpCanvas.height = heightPx;
+
+                const ctx = tmpCanvas.getContext('2d');
+                ctx.drawImage(canvas, 0, 0, widthPx, heightPx);
+
+                const imgData = tmpCanvas.toDataURL('image/png', 1.0);
+
+                if (i > 0) pdf.addPage();
+
+                pdf.setFontSize(14);
+                pdf.text(titulo, 15, 20);
+
+                // Convertir px a mm para el tamaño real en el PDF
+                const imgWidthMm = widthPx * pxToMm;
+                const imgHeightMm = heightPx * pxToMm;
+
+                pdf.addImage(imgData, 'PNG', 15, 30, imgWidthMm, imgHeightMm);
+            }
+
+            pdf.save('graficos_tareas.pdf');
+        }
+
+
+    </script>
+
+    <div class="centrado">
+        <button onclick="descargarGraficosEnPDF()">Exportar a PDF</button>
+    </div><br><br>
+</body>
+
+</html>

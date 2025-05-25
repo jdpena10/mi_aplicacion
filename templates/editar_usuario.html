@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Editar Usuario</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #f5f7fa;
+      margin: 40px;
+      color: #333;
+    }
+
+    h1 {
+      color: #2c3e50;
+      border-bottom: 2px solid #3498db;
+      padding-bottom: 10px;
+      margin-bottom: 30px;
+    }
+
+    .form-container {
+      background-color: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.05);
+      max-width: 500px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+
+    select {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+
+    p {
+      margin-bottom: 10px;
+    }
+
+    button {
+      background-color: #2980b9;
+      color: white;
+      padding: 10px 18px;
+      border: none;
+      border-radius: 5px;
+      font-size: 16px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    button:hover {
+      background-color: #2471a3;
+    }
+
+    .back-link {
+      display: inline-block;
+      margin-top: 20px;
+      color: #3498db;
+      text-decoration: none;
+    }
+
+    .back-link:hover {
+      text-decoration: underline;
+    }
+
+    .message {
+      margin-bottom: 20px;
+      padding: 10px 15px;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+
+    .message.success {
+      background-color: #dff0d8;
+      color: #3c763d;
+    }
+
+    .message.error {
+      background-color: #f2dede;
+      color: #a94442;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Editar Usuario</h1>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="message {{ message.tags }}">
+        {{ message }}
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  <div class="form-container">
+    <p><strong>Nombre:</strong> {{ usuario.nombre }}</p>
+    <p><strong>Email:</strong> {{ usuario.email }}</p>
+
+    <form method="post">
+      {% csrf_token %}
+      <label for="rol">Rol:</label>
+      <select name="rol" id="rol" required>
+        <option value="usuario" {% if usuario.rol == "usuario" %}selected{% endif %}>Usuario</option>
+        <option value="administrador" {% if usuario.rol == "administrador" %}selected{% endif %}>Administrador</option>
+        <option value="visualizador" {% if usuario.rol == "visualizador" %}selected{% endif %}>Visualizador de métricas</option>
+      </select>
+
+      <button type="submit">Actualizar</button>
+    </form>
+  </div>
+
+  <a href="{% url 'dashboard' %}" class="back-link">← Volver al dashboard</a>
+
+</body>
+</html>
+

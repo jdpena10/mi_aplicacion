@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Métricas de Usuarios</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 20px;
+    }
+    th, td {
+      border: 1px solid #aaa;
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      background-color: #f2f2f2;
+    }
+    .container {
+      max-width: 900px;
+      margin: auto;
+      padding: 20px;
+      font-family: Arial, sans-serif;
+    }
+    .alert {
+      padding: 15px;
+      background-color: #f44336;
+      color: white;
+      margin-bottom: 20px;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <button class="btn btn-secondary" onclick="window.history.back();">
+      ← Volver
+    </button>
+
+    {% if mensaje_error %}
+      <div class="alert alert-danger" role="alert">
+        {{ mensaje_error }}
+      </div>
+    {% else %}
+      <h2>📊 Métricas de Usuarios</h2>
+
+      <p><strong>Usuarios activos:</strong> {{ usuarios_activos }}</p>
+      <p><strong>Último usuario conectado:</strong> {{ ultimo_usuario }} el {{ ultimo_login }}</p><br>
+
+      <h3>Usuarios registrados por día</h3>
+      <canvas id="graficaUsuariosCreados" width="600" height="300"></canvas><br>
+
+      <h3>Lista completa de usuarios registrados</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Email</th>
+            <th>Nombre</th>
+            <th>Fecha de creación</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for usuario in lista_usuarios %}
+            <tr>
+              <td>{{ usuario.email }}</td>
+              <td>{{ usuario.display_name }}</td>
+              <td>{{ usuario.fecha_creacion }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="3">No hay usuarios registrados.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <script>
+        const ctx2 = document.getElementById('graficaUsuariosCreados').getContext('2d');
+        const fechasCreacion = Object.keys({{ usuarios_creados_por_dia|safe }});
+        const valoresCreacion = Object.values({{ usuarios_creados_por_dia|safe }});
+
+        const chartCreacion = new Chart(ctx2, {
+          type: 'bar',
+          data: {
+            labels: fechasCreacion,
+            datasets: [{
+              label: 'Usuarios creados por día',
+              data: valoresCreacion,
+              backgroundColor: 'rgba(255, 159, 64, 0.6)'
+            }]
+          },
+          options: {
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: {
+                  stepSize: 1,
+                  callback: function(value) {
+                    if (Number.isInteger(value)) {
+                      return value;
+                    }
+                  }
+                }
+              }
+            }
+          }
+        });
+      </script>
+    {% endif %}
+  </div>
+</body>
+</html>

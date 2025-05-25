@@ -1,0 +1,540 @@
+{% load tz %}
+{% block content %}
+
+<h2 style="text-align: center; margin-bottom: 30px;">{{ tablero.nombre }}</h2>
+<a href="{% url 'listar_tableros' %}" class="volver-link" style="margin-left: 20px; text-decoration: none;">
+    ⬅ Volver a la lista de tableros
+</a>
+
+
+<a href="{% url 'ver_calendario' tablero_id %}" class="volver-link" style="margin-left: 20px; text-decoration: none;">
+    📅Ver Calendario
+</a>
+
+<a href="{% url 'ver_resumen' tablero_id %}" class="volver-link" style="margin-left: 20px; text-decoration: none;">
+  📋Resumen de tareas
+</a>
+
+<a href="javascript:void(0)" onclick="toggleCompartirForm()" style="margin-left: 20px; text-decoration: none;">
+    📤 Compartir Tablero
+</a>
+
+<a href="{% url 'simular_pago_formulario' %}" class="volver-link" style="margin-left: 500px; text-decoration: none;">
+   🏅 Conviertete en usuario Premium
+</a>
+
+{% if mensaje_compartir %}
+<p style="color: green; margin-top: 10px;">{{ mensaje_compartir }}</p>
+{% endif %}
+
+
+<div class="tablero-container" id="listas">
+    {% for lista_id, lista in listas.items %}
+    <div class="lista" data-id="{{ lista_id }}">
+        <!-- Formulario para eliminar la lista -->
+        <form method="POST" action="{% url 'eliminar_lista' tablero_id=tablero_id lista_id=lista_id %}"
+            style="text-align: right;">
+            {% csrf_token %}
+            <button type="submit" class="btn-eliminar-lista"
+                onclick="return confirm('¿Eliminar toda la lista y sus tarjetas?');">🗑️</button>
+        </form>
+
+        <h4 class="lista-titulo">{{ lista.nombre }}</h4>
+
+        <div class="tarjetas">
+            {% for tarjeta_id, tarjeta in lista.tarjetas.items %}
+            <div class="tarjeta" data-id="{{ tarjeta_id }}"
+                data-fecha-limite="{{ tarjeta.fecha_limite|default_if_none:'' }}"
+                data-completada="{{ tarjeta.completada|yesno:'true,false' }}"
+                style="background-color: {{ tarjeta.color }}">
+                {% if tarjeta.completada %}
+                <span class="badge completada-badge">✔ Completada</span>
+                {% endif %}
+                <strong>{{ tarjeta.titulo }}</strong><br>
+                <small>{{ tarjeta.descripcion }}</small><br>
+                {% if tarjeta.fecha_limite %}
+                <small class="fecha-limite">📅 {{ tarjeta.fecha_limite }}</small><br>
+                {% endif %}
+                <!-- Botones de editar y eliminar -->
+                <button class="btn-editar-tarjeta"
+                    onclick="editarTarjeta('{{ tarjeta_id }}', '{{ lista_id }}', '{{ tablero_id }}')">✏️ Editar</button>
+                <button class="btn-eliminar-tarjeta"
+                    onclick="eliminarTarjeta('{{ tarjeta_id }}', '{{ lista_id }}', '{{ tablero_id }}')">🗑️
+                    Eliminar</button>
+            </div>
+            {% empty %}
+            <p>No hay tarjetas.</p>
+            {% endfor %}
+        </div>
+
+        <!-- Mostrar formulario para agregar tarjeta -->
+        <button class="btn-mostrar-formulario" onclick="mostrarFormularioTarjeta('{{ lista_id }}')">➕ Agregar
+            Tarjeta</button>
+
+        <!-- Formulario para agregar tarjeta -->
+        <form method="POST" action="{% url 'agregar_tarjeta' tablero_id=tablero_id lista_id=lista_id %}"
+            class="formulario-tarjeta" id="formulario-{{ lista_id }}" style="display: none;">
+            {% csrf_token %}
+            <input type="text" name="titulo" placeholder="Título" required>
+            <textarea name="descripcion" placeholder="Descripción" rows="2" required></textarea>
+            <span>Seleccione un color:</span>
+            <input type="color" name="color" value="#ffffff" required>
+            <input type="date" name="fecha_limite" required>
+            <input type="hidden" name="orden" value="0">
+            <button type="submit" class="btn-agregar">➕ Agregar</button>
+        </form>
+    </div>
+    {% endfor %}
+
+    <!-- Nueva lista -->
+    <div class="lista nueva-lista">
+        <form method="POST" action="">
+            {% csrf_token %}
+            <input type="text" name="nombre" placeholder="Nombre de la lista" required>
+            <input type="hidden" name="orden" value="0">
+            <button type="submit" class="btn-nueva-lista">➕ Agregar Lista</button>
+        </form>
+    </div>
+
+    <!-- Formulario para compartir tablero -->
+    <div id="form-compartir" style="margin-top: 10px; {% if not mostrar_form_compartir %}display: none;{% endif %}">
+        <form method="POST" action="{% url 'compartir_tablero' tablero_id=tablero_id %}">
+            {% csrf_token %}
+            <input type="email" name="email" placeholder="Correo para compartir" required>
+            <button type="submit">Enviar Invitación</button>
+        </form>
+    </div>
+
+</div>
+
+<!-- Modal de edición de tarjeta -->
+<div id="modal-editar-tarjeta" style="display: none;">
+    <div class="modal-contenido">
+        <h3>Editar Tarjeta</h3>
+        <form id="formulario-editar-tarjeta">
+            {% csrf_token %}
+            <input type="text" id="editar-titulo" name="titulo" placeholder="Título" required><br>
+            <textarea id="editar-descripcion" name="descripcion" placeholder="Descripción" rows="2"></textarea><br>
+            <input type="color" id="editar-color" name="color"><br>
+            <input type="date" id="editar-fecha-limite" name="fecha_limite"><br>
+            <input type="checkbox" id="editar-completada" name="completada">
+            <label for="editar-completada">Marcar como completada</label><br>
+            <button type="submit" class="btn-editar">Guardar Cambios</button>
+            <button type="button" class="btn-cerrar" onclick="cerrarModal()">Cancelar</button>
+        </form>
+    </div>
+</div>
+
+<style>
+    body {
+        background: #f0f4f8;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    .tablero-container {
+        display: flex;
+        gap: 20px;
+        overflow-x: auto;
+        padding: 20px;
+    }
+
+    .lista {
+        background: #ffffff;
+        border-radius: 12px;
+        padding: 16px;
+        min-width: 270px;
+        max-height: 85vh;
+        overflow-y: auto;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+        position: relative;
+    }
+
+    .lista-titulo {
+        font-size: 18px;
+        color: #333;
+        margin-bottom: 12px;
+        border-bottom: 1px solid #e0e0e0;
+        padding-bottom: 6px;
+    }
+
+    .btn-eliminar-lista {
+        background: transparent;
+        border: none;
+        color: #d9534f;
+        font-size: 16px;
+        cursor: pointer;
+    }
+
+    .tarjeta {
+        background: #fafafa;
+        border-radius: 10px;
+        padding: 12px;
+        margin-bottom: 12px;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+    }
+
+    .completada-badge {
+        background-color: #28a745;
+        color: white;
+        padding: 4px 8px;
+        font-size: 12px;
+        border-radius: 8px;
+        display: inline-block;
+        margin-bottom: 8px;
+    }
+
+    .fecha-limite {
+        font-size: 12px;
+        color: #555;
+        margin-top: 4px;
+        display: inline-block;
+    }
+
+    .acciones {
+        margin-top: 10px;
+        display: flex;
+        gap: 10px;
+    }
+
+    .btn-editar,
+    .btn-eliminar {
+        font-size: 13px;
+        padding: 4px 8px;
+        border-radius: 5px;
+        text-decoration: none;
+        transition: background-color 0.2s;
+    }
+
+    .btn-editar {
+        background-color: #ffc107;
+        color: #333;
+    }
+
+    .btn-editar:hover {
+        background-color: #e0a800;
+    }
+
+    .btn-eliminar {
+        background-color: #dc3545;
+        color: white;
+    }
+
+    .btn-eliminar:hover {
+        background-color: #c82333;
+    }
+
+    .formulario-tarjeta {
+        margin-top: 10px;
+    }
+
+    .formulario-tarjeta input[type="text"],
+    .formulario-tarjeta textarea,
+    .formulario-tarjeta input[type="color"],
+    .formulario-tarjeta input[type="date"] {
+        width: 100%;
+        padding: 6px;
+        margin-bottom: 6px;
+        border-radius: 6px;
+        border: 1px solid #ccc;
+    }
+
+    .btn-agregar {
+        width: 100%;
+        background-color: #d4defa;
+        color: black;
+        border: none;
+        padding: 8px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: bold;
+    }
+
+    .btn-agregar:hover {
+        background-color: #698bf3;
+    }
+
+    .btn-mostrar-formulario {
+        width: 100%;
+        margin-top: 10px;
+        background-color: #17a2b8;
+        color: white;
+        padding: 8px;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+    }
+
+    .btn-mostrar-formulario:hover {
+        background-color: #138496;
+    }
+
+    .nueva-lista {
+        background-color: #eef1f7;
+        border: 2px dashed #ccc;
+        text-align: center;
+        color: #5e6c84;
+        font-weight: bold;
+    }
+
+    .btn-nueva-lista {
+        background-color: #007bff;
+        color: white;
+        padding: 10px;
+        border: none;
+        border-radius: 8px;
+        margin-top: 12px;
+        cursor: pointer;
+        font-weight: bold;
+    }
+
+    .btn-nueva-lista:hover {
+        background-color: #0056b3;
+    }
+
+    .vencida-badge {
+        background-color: #e63946;
+        color: white;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 12px;
+        display: inline-block;
+        margin-bottom: 4px;
+    }
+</style>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+
+        // Mostrar u ocultar el formulario de crear tarjeta
+        function mostrarFormularioTarjeta(listaId) {
+            const formulario = document.getElementById('formulario-' + listaId);
+            formulario.style.display = (formulario.style.display === "none") ? "block" : "none";
+        }
+
+        // Convertir color RGB a hexadecimal
+        function rgbToHex(rgb) {
+            const result = rgb.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
+            if (result) {
+                return "#" + ("0" + parseInt(result[1], 10).toString(16)).slice(-2)
+                    + ("0" + parseInt(result[2], 10).toString(16)).slice(-2)
+                    + ("0" + parseInt(result[3], 10).toString(16)).slice(-2);
+            }
+            return rgb; // Si ya es un color HEX, lo devuelve igual
+        }
+
+        // Cerrar el modal de edición
+        function cerrarModal() {
+            document.getElementById('modal-editar-tarjeta').style.display = "none";
+        }
+
+        // Editar tarjeta
+        window.editarTarjeta = function (tarjetaId, listaId, tableroId) {
+            const tarjeta = document.querySelector(`.tarjeta[data-id='${tarjetaId}']`);
+            const titulo = tarjeta.querySelector('strong').innerText;
+            const descripcion = tarjeta.querySelector('small').innerText;
+            const color = tarjeta.style.backgroundColor || '#ffffff';
+            const fechaLimite = tarjeta.getAttribute('data-fecha-limite');
+            const completada = tarjeta.getAttribute('data-completada') === 'true';
+
+            document.getElementById('editar-titulo').value = titulo;
+            document.getElementById('editar-descripcion').value = descripcion;
+            document.getElementById('editar-color').value = rgbToHex(color);
+            document.getElementById('editar-fecha-limite').value = fechaLimite;
+            document.getElementById('editar-completada').checked = completada;
+
+            document.getElementById('modal-editar-tarjeta').style.display = "block";
+
+            document.getElementById('formulario-editar-tarjeta').onsubmit = function (event) {
+                event.preventDefault();
+                const newTitulo = document.getElementById('editar-titulo').value;
+                const newDescripcion = document.getElementById('editar-descripcion').value;
+                const newColor = document.getElementById('editar-color').value;
+                const newFechaLimite = document.getElementById('editar-fecha-limite').value;
+                const nuevaCompletada = document.getElementById('editar-completada').checked;
+                const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+                fetch('/editar_tarjeta/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken,
+                    },
+                    body: JSON.stringify({
+                        tarjeta_id: tarjetaId,
+                        lista_id: listaId,
+                        tablero_id: tableroId,
+                        titulo: newTitulo,
+                        descripcion: newDescripcion,
+                        color: newColor,
+                        fecha_limite: newFechaLimite,
+                        completada: nuevaCompletada
+                    })
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            tarjeta.querySelector('strong').innerText = newTitulo;
+                            tarjeta.querySelector('small').innerText = newDescripcion;
+                            tarjeta.style.backgroundColor = newColor;
+                            tarjeta.setAttribute('data-fecha-limite', newFechaLimite);
+                            tarjeta.setAttribute('data-completada', nuevaCompletada);
+
+                            // Mostrar o quitar badge de completada
+                            let existingBadge = tarjeta.querySelector('.badge-completada');
+                            let existingVencidaBadge = tarjeta.querySelector('.vencida-badge');
+                            const hoy = new Date().toISOString().split('T')[0]; // Obtener fecha actual
+
+                            if (nuevaCompletada) {
+                                if (!existingBadge) {
+                                    const badge = document.createElement('span');
+                                    badge.className = 'badge badge-completada';
+                                    badge.innerText = '✅ Completada';
+                                    tarjeta.prepend(badge);
+                                }
+                            } else if (existingBadge) {
+                                existingBadge.remove();
+                            }
+
+                            // Verificar si la tarjeta está vencida
+                            if (newFechaLimite < hoy) {
+                                if (!existingVencidaBadge) {
+                                    const badge = document.createElement('span');
+                                    badge.className = 'badge vencida-badge';
+                                    badge.innerText = '⛔ Vencida';
+                                    tarjeta.prepend(badge);
+                                }
+                            } else if (existingVencidaBadge) {
+                                existingVencidaBadge.remove();
+                            }
+
+                            alert('Tarjeta actualizada con éxito');
+                            cerrarModal();
+                        } else {
+                            alert('Error al actualizar la tarjeta');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('Hubo un error al actualizar la tarjeta');
+                    });
+            };
+        };
+
+        // Eliminar tarjeta
+        window.eliminarTarjeta = function (tarjetaId, listaId, tableroId) {
+            if (confirm("¿Estás seguro de que deseas eliminar esta tarjeta?")) {
+                const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+                fetch('/eliminar_tarjeta/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken,
+                    },
+                    body: JSON.stringify({
+                        tarjeta_id: tarjetaId,
+                        lista_id: listaId,
+                        tablero_id: tableroId
+                    })
+                })
+                    .then(response => {
+                        if (!response.ok) throw new Error('Respuesta no válida del servidor');
+                        return response.json();
+                    })
+                    .then(data => {
+                        if (data.success) {
+                            const tarjeta = document.querySelector(`.tarjeta[data-id='${tarjetaId}']`);
+                            tarjeta.remove();
+                            alert('Tarjeta eliminada con éxito.');
+                        } else {
+                            alert('Error: ' + (data.error || 'No se pudo eliminar la tarjeta.'));
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('Hubo un error al eliminar la tarjeta.');
+                    });
+            }
+        };
+
+        // Marcar tarjetas vencidas al cargar la página
+        const tarjetas = document.querySelectorAll('.tarjeta');
+        tarjetas.forEach(function (tarjeta) {
+            const fechaLimite = tarjeta.getAttribute('data-fecha-limite');
+            const completada = tarjeta.getAttribute('data-completada') === 'true';
+            const hoy = new Date().toISOString().split('T')[0];
+
+            if (fechaLimite && !completada && fechaLimite < hoy) {
+                const badge = document.createElement('span');
+                badge.className = 'badge vencida-badge';
+                badge.innerText = '⛔ Vencida';
+                tarjeta.prepend(badge);
+            }
+        });
+
+        // Exponer funciones globales necesarias
+        window.mostrarFormularioTarjeta = mostrarFormularioTarjeta;
+        window.cerrarModal = cerrarModal;
+    });
+
+    // Función para mostrar/ocultar el formulario de compartir tablero
+    function toggleCompartirForm() {
+        const form = document.getElementById('form-compartir');
+        if (form.style.display === 'none' || form.style.display === '') {
+            form.style.display = 'block';
+        } else {
+            form.style.display = 'none';
+        }
+    }
+    // Exponer la función globalmente para que funcione el onclick en el botón
+    window.toggleCompartirForm = toggleCompartirForm;
+
+    // FUNCIONALIDAD DE ARRASTRAR Y SOLTAR LISTAS
+    const tablero = document.getElementById("listas");
+    let draggedLista = null;
+
+    document.querySelectorAll('.lista').forEach(lista => {
+        // Evitar que la "nueva lista" sea arrastrable
+        if (lista.classList.contains('nueva-lista')) return;
+
+        lista.setAttribute('draggable', 'true');
+
+        lista.addEventListener('dragstart', function (e) {
+            draggedLista = this;
+            this.style.opacity = '0.5';
+        });
+
+        lista.addEventListener('dragend', function () {
+            this.style.opacity = '1';
+            draggedLista = null;
+        });
+
+        lista.addEventListener('dragover', function (e) {
+            e.preventDefault(); // Necesario para permitir el drop
+        });
+
+        lista.addEventListener('drop', function (e) {
+            e.preventDefault();
+            if (draggedLista && draggedLista !== this) {
+                const todasLasListas = [...tablero.querySelectorAll('.lista:not(.nueva-lista)')];
+                const indiceArrastrada = todasLasListas.indexOf(draggedLista);
+                const indiceSoltar = todasLasListas.indexOf(this);
+
+                if (indiceArrastrada < indiceSoltar) {
+                    tablero.insertBefore(draggedLista, this.nextSibling);
+                } else {
+                    tablero.insertBefore(draggedLista, this);
+                }
+            }
+        });
+    });
+
+</script>
+{% endblock %}
+
+
+
+
+
+
+
