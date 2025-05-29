@@ -47,6 +47,28 @@ signer = TimestampSigner()
 
 # Vista para el registro de usuarios
 def registro(request):
+    """
+    Vista encargada de registrar nuevos usuarios y enviar un correo electrónico
+    con un enlace de verificación firmado.
+
+    Esta vista procesa solicitudes POST con datos del formulario para registrar
+    un usuario, firma los datos sensibles (email, contraseña, usuario), genera un
+    token codificado en base64, y envía un correo de verificación con un enlace
+    que contiene ese token.
+
+    :param request: La solicitud HTTP que puede contener datos POST con 'email', 
+                    'password' y 'username'.
+    :type request: HttpRequest
+
+    :return: Renderiza la plantilla 'registro.html' mostrando un mensaje de confirmación
+             si el método es POST y el correo fue enviado, o solo la plantilla si es GET.
+    :rtype: HttpResponse
+    """
+
+    """
+    Vista encargada de registrar nuevos usuarios.
+    Envía un correo electrónico con un enlace de verificación firmado.
+    """
     if request.method == 'POST':
         email = request.POST['email']
         password = request.POST['password']
