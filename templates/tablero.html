@@ -11,9 +11,11 @@
     📅Ver Calendario
 </a>
 
+{% if rol == 'premium' or rol == 'administrador' %}
 <a href="{% url 'ver_resumen' tablero_id %}" class="volver-link" style="margin-left: 20px; text-decoration: none;">
-  📋Resumen de tareas
+    📋Resumen de tareas
 </a>
+{% endif %}
 
 <a href="javascript:void(0)" onclick="toggleCompartirForm()" style="margin-left: 20px; text-decoration: none;">
     📤 Compartir Tablero
@@ -32,11 +34,9 @@
     {% for lista_id, lista in listas.items %}
     <div class="lista" data-id="{{ lista_id }}">
         <!-- Formulario para eliminar la lista -->
-        <form method="POST" action="{% url 'eliminar_lista' tablero_id=tablero_id lista_id=lista_id %}"
-            style="text-align: right;">
+        <form method="POST" action="{% url 'eliminar_lista' tablero_id=tablero_id lista_id=lista_id %}" style="text-align: right;" onsubmit="return confirmarEliminacionLista();">
             {% csrf_token %}
-            <button type="submit" class="btn-eliminar-lista"
-                onclick="return confirm('¿Eliminar toda la lista y sus tarjetas?');">🗑️</button>
+            <button type="submit" class="btn-eliminar-lista">🗑️</button>
         </form>
 
         <h4 class="lista-titulo">{{ lista.nombre }}</h4>
@@ -79,6 +79,7 @@
             <textarea name="descripcion" placeholder="Descripción" rows="2" required></textarea>
             <span>Seleccione un color:</span>
             <input type="color" name="color" value="#ffffff" required>
+            <span>Seleccione una fecha limite para la tarea:</span>
             <input type="date" name="fecha_limite" required>
             <input type="hidden" name="orden" value="0">
             <button type="submit" class="btn-agregar">➕ Agregar</button>
@@ -303,6 +304,27 @@
 </style>
 
 <script>
+
+    // Función para crear fecha sin hora a partir de string "YYYY-MM-DD"
+    function soloFecha(dateStr) {
+        const partes = dateStr.split('-'); 
+        return new Date(partes[0], partes[1] - 1, partes[2]); 
+    }
+
+    document.addEventListener("DOMContentLoaded", function () {
+      const hoy = new Date();
+      const yyyy = hoy.getFullYear();
+      const mm = String(hoy.getMonth() + 1).padStart(2, '0'); // Meses de 0-11
+      const dd = String(hoy.getDate()).padStart(2, '0');
+      const fechaMinima = `${yyyy}-${mm}-${dd}`;
+
+      // Aplica la fecha mínima a todos los inputs de tipo date
+      document.querySelectorAll("input[type='date']").forEach(input => {
+        input.min = fechaMinima;
+      });
+    });
+
+
     document.addEventListener("DOMContentLoaded", function () {
 
         // Mostrar u ocultar el formulario de crear tarjeta
@@ -382,7 +404,16 @@
                             // Mostrar o quitar badge de completada
                             let existingBadge = tarjeta.querySelector('.badge-completada');
                             let existingVencidaBadge = tarjeta.querySelector('.vencida-badge');
-                            const hoy = new Date().toISOString().split('T')[0]; // Obtener fecha actual
+
+                            // Usar la función soloFecha para comparar sin horas
+                            const fechaLimiteDate = soloFecha(newFechaLimite);
+                            const hoy = new Date();
+                            const hoySinHora = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+
+                            // --- Logs para debug ---
+                            console.log('fechaLimite original:', newFechaLimite);
+                            console.log('fechaLimiteDate:', fechaLimiteDate.toISOString());
+                            console.log('hoySinHora:', hoySinHora.toISOString());
 
                             if (nuevaCompletada) {
                                 if (!existingBadge) {
@@ -395,8 +426,8 @@
                                 existingBadge.remove();
                             }
 
-                            // Verificar si la tarjeta está vencida
-                            if (newFechaLimite < hoy) {
+                            // Verificar si la tarjeta está vencida usando fechas sin hora
+                            if (fechaLimiteDate < hoySinHora) {
                                 if (!existingVencidaBadge) {
                                     const badge = document.createElement('span');
                                     badge.className = 'badge vencida-badge';
@@ -462,13 +493,24 @@
         tarjetas.forEach(function (tarjeta) {
             const fechaLimite = tarjeta.getAttribute('data-fecha-limite');
             const completada = tarjeta.getAttribute('data-completada') === 'true';
-            const hoy = new Date().toISOString().split('T')[0];
 
-            if (fechaLimite && !completada && fechaLimite < hoy) {
-                const badge = document.createElement('span');
-                badge.className = 'badge vencida-badge';
-                badge.innerText = '⛔ Vencida';
-                tarjeta.prepend(badge);
+            if (fechaLimite && !completada) {
+                // Usar la función soloFecha para comparar sin horas
+                const fechaLimiteDate = soloFecha(fechaLimite);
+                const hoy = new Date();
+                const hoySinHora = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+
+                // --- Logs para debug ---
+                console.log('fechaLimite original:', fechaLimite);
+                console.log('fechaLimiteDate:', fechaLimiteDate.toISOString());
+                console.log('hoySinHora:', hoySinHora.toISOString());
+
+                if (fechaLimiteDate < hoySinHora) {
+                    const badge = document.createElement('span');
+                    badge.className = 'badge vencida-badge';
+                    badge.innerText = '⛔ Vencida';
+                    tarjeta.prepend(badge);
+                }
             }
         });
 
@@ -529,7 +571,17 @@
         });
     });
 
+    // Confirmación doble para eliminar lista
+    function confirmarEliminacionLista() {
+        if (confirm("¿Estás seguro de que deseas eliminar toda la lista y todas sus tarjetas?")) {
+            return confirm("Esta acción no se puede deshacer. ¿Realmente quieres continuar?");
+        }
+        return false;
+    }
+    window.confirmarEliminacionLista = confirmarEliminacionLista;
+
 </script>
+
 {% endblock %}
 
 

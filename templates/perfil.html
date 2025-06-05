@@ -1,9 +1,47 @@
-<form method="POST" action="{% url 'eliminar_cuenta' %}" onsubmit="return confirm('¿Estás seguro de que deseas eliminar tu cuenta y todos tus datos? Esta acción no se puede deshacer.');">
+<!-- Paso 1: Botón inicial -->
+<button type="button" class="btn btn-danger" onclick="mostrarConfirmacion()">🗑️ Eliminar mi cuenta</button><br><br>
+
+<!-- Paso 2: Formulario oculto inicialmente -->
+<form id="form-eliminar" method="POST" action="{% url 'eliminar_cuenta' %}" style="display:none;" onsubmit="return confirmacionFinal();">
     {% csrf_token %}
-    <button type="submit" class="btn btn-danger">🗑️ Eliminar mi cuenta</button>
+
+    <label for="razon">¿Por qué deseas eliminar tu cuenta?</label>
+    <select id="razon" name="razon" class="form-select mb-3" required>
+        <option value="">-- Selecciona una razón --</option>
+        <option value="No la uso con frecuencia">No la uso con frecuencia</option>
+        <option value="No estoy satisfecho con el servicio">No estoy satisfecho con el servicio</option>
+        <option value="Tengo una cuenta duplicada">Tengo una cuenta duplicada</option>
+        <option value="Problemas de privacidad">Problemas de privacidad</option>
+        <option value="Otra">Otra</option>
+    </select>
+
+    <button type="submit" class="btn btn-danger">✅ Confirmar eliminación definitiva</button>
 </form>
 
 <!-- Botón para volver a la página anterior -->
 <button type="button" class="btn btn-secondary mt-3" onclick="history.back()">← Volver</button>
 
+<script>
+function mostrarConfirmacion() {
+    // Mostrar el formulario con la razón
+    document.getElementById('form-eliminar').style.display = 'block';
 
+    // Opcional: Deshabilitar el botón inicial para no repetir el proceso
+    event.target.disabled = true;
+}
+
+function confirmacionFinal() {
+    const razon = document.getElementById("razon").value;
+
+    if (!razon) {
+        alert("Por favor selecciona una razón para eliminar tu cuenta.");
+        return false;
+    }
+
+    if (!confirm("¿Estás seguro de que deseas eliminar tu cuenta y todos tus datos? Esta acción no se puede deshacer.")) {
+        return false;
+    }
+
+    return confirm("Esta es tu última oportunidad. ¿Realmente quieres eliminar tu cuenta?");
+}
+</script>

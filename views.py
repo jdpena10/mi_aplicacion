@@ -29,6 +29,7 @@ from django.http import Http404
 import json
 from urllib.parse import urlencode, quote_plus
 import datetime
+from datetime import date
 from collections import defaultdict
 from django.contrib.auth import logout
 
@@ -41,50 +42,35 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.utils import ImageReader
 import qrcode
 from PIL import Image as PILImage
+import pytz
+import math
+import base64
 
 signer = TimestampSigner()
 
 
 # Vista para el registro de usuarios
 def registro(request):
-    """
-    Vista encargada de registrar nuevos usuarios y enviar un correo electrónico
-    con un enlace de verificación firmado.
 
-    Esta vista procesa solicitudes POST con datos del formulario para registrar
-    un usuario, firma los datos sensibles (email, contraseña, usuario), genera un
-    token codificado en base64, y envía un correo de verificación con un enlace
-    que contiene ese token.
-
-    :param request: La solicitud HTTP que puede contener datos POST con 'email', 
-                    'password' y 'username'.
-    :type request: HttpRequest
-
-    :return: Renderiza la plantilla 'registro.html' mostrando un mensaje de confirmación
-             si el método es POST y el correo fue enviado, o solo la plantilla si es GET.
-    :rtype: HttpResponse
-    """
-
-    """
-    Vista encargada de registrar nuevos usuarios.
-    Envía un correo electrónico con un enlace de verificación firmado.
-    """
     if request.method == 'POST':
+        # Obtener datos del formulario
         email = request.POST['email']
         password = request.POST['password']
         username = request.POST['username']
 
-        # Combinar y firmar datos
+        # Combinar datos sensibles y firmarlos digitalmente
         data = f"{email}|{password}|{username}"
         signed_data = signer.sign(data)
+
+        # Codificar el token firmado en base64 para incluirlo en la URL
         token = base64.urlsafe_b64encode(signed_data.encode()).decode()
 
-        # Crear enlace de verificación
+        # Crear enlace absoluto para la verificación de correo
         link = request.build_absolute_uri(
             reverse('verificar_email') + '?' + urlencode({'token': token})
         )
 
-        # Enviar correo
+        # Enviar correo electrónico con el enlace de verificación
         send_mail(
             'Verifica tu correo',
             f'Hola {username}, haz clic para verificar tu correo y activar tu cuenta:\n\n{link}',
@@ -92,18 +78,23 @@ def registro(request):
             [email],
             fail_silently=False,
         )
+
+        # Mostrar mensaje de confirmación en la interfaz
         messages.success(request, 'Revisa tu correo para verificar tu cuenta.')
 
+        # Renderizar plantilla de registro con mensaje
         return render(request, 'registro.html', {
-
             'mensaje': 'Revisa tu correo para verificar tu cuenta.'
         })
 
+    # Si la solicitud no es POST, mostrar simplemente la plantilla
     return render(request, 'registro.html')
 
 
+# ========================
+# Vista: verificar_email
+# ========================
 
-#Verificacion desde el email
 @csrf_exempt
 def verificar_email(request):
     if request.method != 'GET':
@@ -114,21 +105,23 @@ def verificar_email(request):
         return JsonResponse({'success': False, 'error': 'Token faltante'}, status=400)
 
     try:
-        # Decodificar y verificar token
+        # Decodificar el token desde base64
         signed_data = base64.urlsafe_b64decode(token.encode()).decode()
-        raw_data = signer.unsign(signed_data, max_age=3600)  # Expira en 1 hora
 
+        # Verificar firma y tiempo de validez (1 hora)
+        raw_data = signer.unsign(signed_data, max_age=3600)
+
+        # Extraer datos originales
         email, password, username = raw_data.split('|')
 
-        # Crear usuario en Firebase
+        # Crear usuario en Firebase Authentication
         user = auth_admin.create_user(
             email=email,
             password=password,
             display_name=username
         )
 
-        # Guardar en Realtime Database
-        # Guardar en Realtime Database usando el UID como clave
+        # Registrar datos del nuevo usuario en Firebase Realtime Database
         admin_db.reference('logins').child(user.uid).set({
             'uid': user.uid,
             'nombre': username,
@@ -136,7 +129,11 @@ def verificar_email(request):
             'rol': 'usuario',
             'fecha_login': datetime.datetime.now().isoformat()
         })
-        # Mensaje de éxito
+
+        # ✅ Verificar si el email tenía invitaciones pendientes a tableros
+        verificar_invitaciones_pendientes(user.uid, email)
+
+        # Confirmar activación
         messages.success(request, '¡Cuenta activada! Ya puedes iniciar sesión.')
         return JsonResponse({'success': True, 'message': 'Cuenta activada. Ahora puedes iniciar sesión.'})
 
@@ -152,6 +149,22 @@ def verificar_email(request):
     except Exception as e:
         return JsonResponse({'success': False, 'error': f'Error al activar cuenta: {e}'}, status=500)
 
+
+# ✅ Función que procesa las invitaciones pendientes
+def verificar_invitaciones_pendientes(uid_actual, email_actual):
+    email_key = email_to_key(email_actual)
+    invitaciones = db.child("invitaciones_pendientes").child(email_key).get().val()
+
+    if invitaciones:
+        for key, invitacion in invitaciones.items():
+            tablero_id = invitacion['tablero_id']
+            propietario_uid = invitacion['propietario_uid']
+
+            db.child("tableros").child(propietario_uid).child(tablero_id).child("invitados").update({
+                uid_actual: False
+            })
+
+        db.child("invitaciones_pendientes").child(email_key).remove()
 
 
 
@@ -302,7 +315,6 @@ def obtener_propietario_tablero(tablero_id):
 
 
 #Crear un tablero
-#Crear un tablero
 @firebase_login_required
 def crear_tablero(request):
     if request.method == 'POST':
@@ -345,46 +357,63 @@ def listar_tableros(request):
 @firebase_login_required
 def ver_tablero(request, tablero_id):
     uid_actual = request.session['firebase_uid']
-    uid_propietario = uid_actual  # Por defecto asumimos que el usuario es el propietario
+    id_token = request.session.get('firebase_id_token')
 
-    # Intentar primero bajo el UID del usuario actual
+    # Obtener el email para buscar el rol
+    user_email = None
+    rol = ''
+
+    if id_token:
+        try:
+            info = auth_admin.verify_id_token(id_token)
+            user_email = info.get('email')
+        except Exception as e:
+            print(f"Error verificando id_token: {e}")
+
+    if user_email:
+        try:
+            logins_ref = admin_db.reference('logins')
+            logins = logins_ref.get()
+            if logins:
+                for key, login in logins.items():
+                    if login.get('email', '').lower() == user_email.lower():
+                        rol = login.get('rol', '').lower()
+                        break
+        except Exception as e:
+            print(f"Error al obtener rol en Realtime DB: {e}")
+
+    # Intentar obtener el tablero bajo el UID actual
     tablero_ref = db.child("tableros").child(uid_actual).child(tablero_id)
     tablero = tablero_ref.get().val()
 
-    # Si no se encuentra el tablero en su propio UID, buscar en todos los usuarios
+    # Si no se encuentra, buscar en todos los tableros para verificar si es colaborador
     if not tablero:
-        tableros_todos = db.child("tableros").get().val() or {}
-        for uid_busqueda, tableros_usuario in tableros_todos.items():
+        tableros_todos = db.child("tableros").get().val()
+        for uid_propietario, tableros_usuario in tableros_todos.items():
             if tablero_id in tableros_usuario:
                 tablero = tableros_usuario[tablero_id]
-                uid_propietario = uid_busqueda
+                uid_actual = uid_propietario
                 break
 
-    # Si el tablero no fue encontrado
+    # Si aún no se encuentra, responder con error
     if not tablero:
         return JsonResponse({"error": "Tablero no encontrado."}, status=404)
 
-    # Verificar si el usuario actual es el propietario o un invitado aprobado
-    es_propietario = uid_actual == uid_propietario
-    invitados = tablero.get("invitados", {})
-    es_invitado_aprobado = invitados.get(uid_actual) is True
-
-    if not es_propietario and not es_invitado_aprobado:
-        return HttpResponseForbidden("No puedes ingresar a este tablero.")
-
+    # Obtener listas del tablero
     listas = tablero.get("listas", {})
 
     if request.method == 'POST':
+        # Crear nueva lista dentro del tablero
         nombre_lista = request.POST.get('nombre')
-        if nombre_lista:
-            nueva_lista = {"nombre": nombre_lista}
-            db.child("tableros").child(uid_propietario).child(tablero_id).child("listas").push(nueva_lista)
-            return redirect('ver_tablero', tablero_id=tablero_id)
+        nueva_lista = {"nombre": nombre_lista}
+        db.child("tableros").child(uid_actual).child(tablero_id).child("listas").push(nueva_lista)
+        return redirect('ver_tablero', tablero_id=tablero_id)
 
     return render(request, 'tablero.html', {
         'tablero_id': tablero_id,
         'tablero': tablero,
-        'listas': listas
+        'listas': listas,
+        'rol': rol, 
     })
 
 
@@ -394,35 +423,104 @@ def agregar_tarjeta(request, tablero_id, lista_id):
     if request.method == 'POST':
         try:
             uid_actual = request.session.get('firebase_uid')
-            propietario_uid = obtener_propietario_tablero(tablero_id)
+            id_token = request.session.get('firebase_id_token')
 
-            if not propietario_uid:
-                raise Exception("Tablero no encontrado.")
+            user_email = None
+            if id_token:
+                info = auth_admin.verify_id_token(id_token)
+                user_email = info.get('email')
 
-            # Verificar si es propietario o invitado
-            es_propietario = uid_actual == propietario_uid
-            es_invitado = db.child("tableros").child(propietario_uid).child(tablero_id).child("invitados").child(uid_actual).get().val()
+            # Buscar el uid dueño del tablero (y verificar si usuario actual está invitado y aprobado)
+            todos_tableros = db.child("tableros").get().val() or {}
+            uid_duenio = None
+            autorizado = False
 
-            if not es_propietario and not es_invitado:
-                return HttpResponseForbidden("No tienes permiso para agregar tarjetas.")
+            for uid_dueño_iter, tableros_usuario in todos_tableros.items():
+                if tablero_id in tableros_usuario:
+                    uid_duenio = uid_dueño_iter
+                    invitados = tableros_usuario[tablero_id].get('invitados', {})
+                    if uid_actual == uid_duenio or invitados.get(uid_actual) == True:
+                        autorizado = True
+                    break
 
-            # Procesar el formulario
+            if not autorizado:
+                return HttpResponse("No tienes permiso para agregar tarjetas en este tablero.", status=403)
+
             titulo = request.POST.get('titulo')
             descripcion = request.POST.get('descripcion')
             orden = request.POST.get('orden', 0)
             color = request.POST.get('color', '#ffffff')
-            fecha_limite = request.POST.get('fecha_limite')
+            fecha_limite_str = request.POST.get('fecha_limite')
 
             tarjeta = {
                 'titulo': titulo,
                 'descripcion': descripcion,
                 'orden': orden,
                 'color': color,
-                'fecha_limite': fecha_limite,
-                'completada': False
+                'fecha_limite': fecha_limite_str,
+                'completada': False,
+                'email': user_email
             }
 
-            db.child("tableros").child(propietario_uid).child(tablero_id).child("listas").child(lista_id).child("tarjetas").push(tarjeta)
+            db.child("tableros").child(uid_duenio).child(tablero_id).child("listas").child(lista_id).child("tarjetas").push(tarjeta)
+
+            # Calcular tiempo restante
+            dias_restantes = None
+            horas_restantes = None
+            minutos_restantes = None
+
+            if fecha_limite_str:
+                try:
+                    fecha_limite = datetime.datetime.strptime(fecha_limite_str, '%Y-%m-%d').date()
+                    hoy = datetime.date.today()
+
+                    # Zona horaria Colombia
+                    zona_colombia = pytz.timezone("America/Bogota")
+                    ahora = datetime.datetime.now(zona_colombia)
+
+                    if fecha_limite >= hoy:
+                        fin_del_dia = datetime.datetime.combine(fecha_limite, datetime.time(23, 59, 59))
+                        fin_del_dia = zona_colombia.localize(fin_del_dia)
+
+                        delta = fin_del_dia - ahora
+                        total_segundos = delta.total_seconds()
+
+                        dias_restantes = int(total_segundos // 86400)
+                        resto_dia = total_segundos % 86400
+                        horas_restantes = int(resto_dia // 3600)
+                        minutos_restantes = int((resto_dia % 3600) // 60)
+                    else:
+                        dias_restantes = horas_restantes = minutos_restantes = 0
+                except Exception as e:
+                    print(f"Error al parsear fecha_limite: {e}")
+
+            # Obtener UID del propietario desde la estructura del tablero
+            propietario_uid = db.child("tableros").child(uid_duenio).child(tablero_id).child("propietario").get().val()
+
+            email_duenio = None
+            if propietario_uid:
+                email_duenio = db.child("logins").child(propietario_uid).child("email").get().val()
+
+            # Enviar correo al propietario si se encuentra su email
+            if email_duenio:
+                asunto = f"Nueva tarjeta agregada: {titulo}"
+                mensaje = (
+                    f"Se ha agregado una nueva tarjeta en tu tablero:\n\n"
+                    f"Título: {titulo}\n"
+                    f"Descripción: {descripcion}\n"
+                    f"Fecha límite: {fecha_limite_str or 'No definida'}\n"
+                )
+
+                if dias_restantes is not None and horas_restantes is not None:
+                    if dias_restantes > 0:
+                        mensaje += f"Tiempo restante: {dias_restantes} día(s), {horas_restantes} hora(s), {minutos_restantes} minuto(s).\n"
+                    else:
+                        mensaje += f"Tiempo restante: {horas_restantes} hora(s), {minutos_restantes} minuto(s).\n"
+
+                send_mail(asunto, mensaje, None, [email_duenio])
+                print(f"Correo enviado al propietario: {email_duenio}")
+            else:
+                print("No se encontró el correo del propietario.")
 
             return redirect('ver_tablero', tablero_id=tablero_id)
 
@@ -445,28 +543,24 @@ def agregar_tarjeta(request, tablero_id, lista_id):
 @csrf_exempt
 @firebase_login_required
 def eliminar_lista(request, tablero_id, lista_id):
+
     if request.method == 'POST':
         try:
-            uid_actual = request.session.get('firebase_uid')
-            propietario_uid = obtener_propietario_tablero(tablero_id)
+            # Obtener el UID del usuario autenticado
+            uid = request.session.get('firebase_uid')
 
-            if not propietario_uid:
-                raise Exception("Tablero no encontrado.")
-
-            es_propietario = uid_actual == propietario_uid
-            es_invitado = db.child("tableros").child(propietario_uid).child(tablero_id).child("invitados").child(uid_actual).get().val()
-
-            if not es_propietario and not es_invitado:
-                return HttpResponseForbidden("No tienes permiso para eliminar esta lista.")
-
-            db.child("tableros").child(propietario_uid).child(tablero_id).child("listas").child(lista_id).remove()
+            # Eliminar la lista de la base de datos
+            db.child("tableros").child(uid).child(tablero_id).child("listas").child(lista_id).remove()
             print("Lista eliminada correctamente.")
 
         except Exception as e:
+            # Imprimir error en consola para depuración
             print(f"Error al eliminar lista: {e}")
 
+        # Redirigir al tablero independientemente del resultado
         return redirect('ver_tablero', tablero_id=tablero_id)
 
+    # Si no es POST, retornar error
     return JsonResponse({'success': False, 'error': 'Método no permitido'})
 
 
@@ -481,29 +575,33 @@ def eliminar_tarjeta(request):
             tarjeta_id = data['tarjeta_id']
             lista_id = data['lista_id']
             tablero_id = data['tablero_id']
-            uid_actual = request.session.get('firebase_uid')
+            uid = request.session.get('firebase_uid')
 
-            propietario_uid = obtener_propietario_tablero(tablero_id)
-            if not propietario_uid:
-                raise Exception("Tablero no encontrado.")
+            print(f"UID: {uid}, Tablero ID: {tablero_id}, Lista ID: {lista_id}, Tarjeta ID: {tarjeta_id}")
 
-            es_propietario = uid_actual == propietario_uid
-            es_invitado = db.child("tableros").child(propietario_uid).child(tablero_id).child("invitados").child(uid_actual).get().val()
+            # Verificar que el usuario sea el propietario del tablero
+            tablero_ref = db.child("tableros").child(uid).child(tablero_id)
+            tablero = tablero_ref.get().val()
 
-            if not es_propietario and not es_invitado:
-                return JsonResponse({'success': False, 'error': 'No tienes permiso para eliminar esta tarjeta.'})
+            if not tablero:
+                return JsonResponse({'success': False, 'error': 'Tablero no encontrado'}, status=404)
 
-            tarjeta_path = f"tableros/{propietario_uid}/{tablero_id}/listas/{lista_id}/tarjetas/{tarjeta_id}"
+            propietario = tablero.get('propietario')
+            if propietario != uid:
+                return JsonResponse({'success': False, 'error': 'No tienes permisos para esta acción'}, status=403)
+
+            # Construir la ruta y eliminar la tarjeta
+            tarjeta_path = f"tableros/{uid}/{tablero_id}/listas/{lista_id}/tarjetas/{tarjeta_id}"
             db.child(tarjeta_path).remove()
 
             print("Tarjeta eliminada correctamente.")
             return JsonResponse({'success': True})
 
         except Exception as e:
-            print(f"Error al eliminar tarjeta: {e}")
+            mensaje_error = f"Hubo un error al eliminar la lista: {str(e)}"
             return JsonResponse({'success': False, 'error': str(e)})
 
-    return JsonResponse({'success': False, 'error': 'Método no permitido'})
+    return JsonResponse({'success': False, 'error': 'Método no permitido'}, status=405)
 
 
 
@@ -513,43 +611,132 @@ def eliminar_tarjeta(request):
 def editar_tarjeta(request):
     if request.method == 'POST':
         try:
+            import pytz
+            import datetime
+            import json
+
             data = json.loads(request.body)
             tarjeta_id = data['tarjeta_id']
             lista_id = data['lista_id']
             tablero_id = data['tablero_id']
-            uid_actual = request.session.get('firebase_uid')
+            uid_editor = request.session.get('firebase_uid')
 
-            # Obtener el UID del propietario del tablero
-            propietario_uid = obtener_propietario_tablero(tablero_id)
-            if not propietario_uid:
-                return JsonResponse({'success': False, 'error': 'Tablero no encontrado'}, status=404)
+            print(f"UID Editor: {uid_editor}, Tablero ID: {tablero_id}, Lista ID: {lista_id}, Tarjeta ID: {tarjeta_id}")
 
-            # Verificar si el usuario actual es propietario o invitado
-            es_propietario = uid_actual == propietario_uid
-            es_invitado = db.child("tableros").child(propietario_uid).child(tablero_id).child("invitados").child(uid_actual).get().val()
-
-            if not es_propietario and not es_invitado:
-                return JsonResponse({'success': False, 'error': 'No tienes permiso para editar esta tarjeta'}, status=403)
-
-            print(f"UID actual: {uid_actual}, Propietario UID: {propietario_uid}, Tablero ID: {tablero_id}, Lista ID: {lista_id}, Tarjeta ID: {tarjeta_id}")
-
-            # Ruta con UID del propietario
-            tarjeta_path = f"tableros/{propietario_uid}/{tablero_id}/listas/{lista_id}/tarjetas/{tarjeta_id}"
-
-            # Obtener datos actuales
+            # Intentar obtener con el UID del editor
+            tarjeta_path = f"tableros/{uid_editor}/{tablero_id}/listas/{lista_id}/tarjetas/{tarjeta_id}"
             tarjeta_actual = db.child(tarjeta_path).get().val()
+
+            # Si no está, buscar UID propietario real del tablero
             if tarjeta_actual is None:
-                return JsonResponse({'success': False, 'error': 'Tarjeta no encontrada'}, status=404)
+                print("Tarjeta no encontrada con UID del editor, se intentará encontrar el propietario del tablero.")
+                todos_tableros = db.child("tableros").get().val() or {}
+                uid_propietario = None
+                autorizado = False
 
+                for uid_iterador, tableros_usuario in todos_tableros.items():
+                    if tablero_id in tableros_usuario:
+                        uid_propietario = uid_iterador
+                        invitados = tableros_usuario[tablero_id].get('invitados', {})
+                        if uid_editor == uid_propietario or invitados.get(uid_editor) == True:
+                            autorizado = True
+                        break
+
+                if not autorizado or not uid_propietario:
+                    return JsonResponse({'success': False, 'error': 'No tienes permiso para editar esta tarjeta'}, status=403)
+
+                tarjeta_path = f"tableros/{uid_propietario}/{tablero_id}/listas/{lista_id}/tarjetas/{tarjeta_id}"
+                tarjeta_actual = db.child(tarjeta_path).get().val()
+
+                if tarjeta_actual is None:
+                    return JsonResponse({'success': False, 'error': 'Tarjeta no encontrada'}, status=404)
+            else:
+                uid_propietario = uid_editor  # El editor es el dueño
+
+            print("Datos actuales de la tarjeta:", tarjeta_actual)
+
+            # Leer valores nuevos
             completada = data.get('completada', False)
+            titulo = data.get('titulo')
+            descripcion = data.get('descripcion')
+            color = data.get('color')
+            fecha_limite_str = data.get('fecha_limite')
 
+            # Actualizar los campos
             db.child(tarjeta_path).update({
-                'titulo': data['titulo'],
-                'descripcion': data['descripcion'],
-                'color': data['color'],
-                'fecha_limite': data['fecha_limite'],
+                'titulo': titulo,
+                'descripcion': descripcion,
+                'color': color,
+                'fecha_limite': fecha_limite_str,
                 'completada': completada
             })
+
+            # Comparar fecha límite anterior y nueva
+            fecha_anterior = tarjeta_actual.get('fecha_limite')
+            se_cambio_fecha = fecha_anterior != fecha_limite_str
+
+            # Calcular tiempo restante
+            dias_restantes = horas_restantes = minutos_restantes = None
+
+            if se_cambio_fecha and fecha_limite_str:
+                try:
+                    fecha_limite = datetime.datetime.strptime(fecha_limite_str, '%Y-%m-%d').date()
+                    hoy = datetime.date.today()
+                    zona_colombia = pytz.timezone("America/Bogota")
+                    ahora = datetime.datetime.now(zona_colombia)
+
+                    if fecha_limite >= hoy:
+                        fin_del_dia = datetime.datetime.combine(fecha_limite, datetime.time(23, 59, 59))
+                        fin_del_dia = zona_colombia.localize(fin_del_dia)
+
+                        delta = fin_del_dia - ahora
+                        total_segundos = delta.total_seconds()
+
+                        dias_restantes = int(total_segundos // 86400)
+                        resto_dia = total_segundos % 86400
+                        horas_restantes = int(resto_dia // 3600)
+                        minutos_restantes = int((resto_dia % 3600) // 60)
+                    else:
+                        dias_restantes = horas_restantes = minutos_restantes = 0
+                except Exception as e:
+                    print(f"Error al parsear nueva fecha_limite: {e}")
+                    dias_restantes = horas_restantes = minutos_restantes = None
+
+            # Obtener UID del propietario desde la estructura del tablero (como me pediste)
+            propietario_uid = db.child("tableros").child(uid_propietario).child(tablero_id).child("propietario").get().val()
+
+            email_duenio = None
+            if propietario_uid:
+                email_duenio = db.child("logins").child(propietario_uid).child("email").get().val()
+
+            # Enviar correo solo si se cambió la fecha y la tarjeta NO está completada
+            if se_cambio_fecha and not completada:
+                # Si tienes email dueño, enviar a él, sino a email en la tarjeta
+                destinatario = email_duenio or tarjeta_actual.get('email')
+
+                if destinatario:
+                    asunto = f"Tarjeta actualizada: {titulo}"
+                    mensaje = (
+                        f"Se ha actualizado la fecha límite de una tarjeta asignada a ti.\n\n"
+                        f"Título: {titulo}\n"
+                        f"Descripción: {descripcion}\n"
+                        f"Nueva fecha límite: {fecha_limite_str or 'No definida'}\n"
+                    )
+
+                    if dias_restantes is not None and horas_restantes is not None:
+                        if dias_restantes > 0:
+                            mensaje += f"Tiempo restante: {dias_restantes} día(s), {horas_restantes} hora(s) y {minutos_restantes} minuto(s).\n\n"
+                        else:
+                            mensaje += f"Tiempo restante: {horas_restantes} hora(s) y {minutos_restantes} minuto(s).\n\n"
+                    else:
+                        mensaje += "\n"
+
+                    # Depuración
+                    print(f"Email destinatario: {destinatario}")
+                    print(f"Días restantes: {dias_restantes}, Horas restantes: {horas_restantes}, Minutos restantes: {minutos_restantes}")
+                    print(f"Mensaje a enviar:\n{mensaje}")
+
+                    send_mail(asunto, mensaje, None, [destinatario])
 
             print("Tarjeta actualizada correctamente.")
             return JsonResponse({'success': True})
@@ -562,38 +749,52 @@ def editar_tarjeta(request):
 
 
 
-
 #agregar calendario 
 @firebase_login_required
 def ver_calendario(request, tablero_id):
+    # Obtener UID del usuario autenticado
     firebase_uid = request.session.get('firebase_uid')
 
-    # Ruta a las listas dentro del tablero del usuario
+    # Ruta a todas las listas del tablero especificado
     ruta = f'tableros/{firebase_uid}/{tablero_id}/listas'
 
-    listas_snapshot = db.child(ruta).get().val()  # igual que editar_tarjeta
+    # Obtener todas las listas y tarjetas del tablero
+    listas_snapshot = db.child(ruta).get().val()
 
     eventos = []
 
     if listas_snapshot:
         for lista_id, lista_data in listas_snapshot.items():
-            tarjetas = lista_data.get('tarjetas', {})
+            tarjetas = lista_data.get('tarjetas', {})  # Obtener las tarjetas de cada lista
             for tarjeta_id, tarjeta in tarjetas.items():
                 fecha_limite = tarjeta.get('fecha_limite')
                 if fecha_limite:
+                    # Depuración: imprimir el color recibido de Firebase
+                    print(f"Color de tarjeta {tarjeta_id}: {repr(tarjeta.get('color'))}")
+
+                    # Validar y asignar color por defecto si es inválido o blanco
+                    color = tarjeta.get('color')
+                    if (not color or not isinstance(color, str) or
+                        color.strip() == "" or color.strip().lower() == "#ffffff"):
+                        color = '#007bff'  # Color por defecto: azul
+
+                    # Agregar evento al calendario
                     eventos.append({
                         'title': tarjeta.get('descripcion', 'Sin título'),
                         'start': fecha_limite,
-                        'color': tarjeta.get('color', 'gray'),
+                        'color': color,
                     })
 
+    # Convertir los eventos a formato JSON para enviarlos al frontend
     eventos_json = json.dumps(eventos)
 
+    # Renderizar el calendario
     return render(request, 'calendario.html', {
         'firebase_uid': firebase_uid,
         'tablero_id': tablero_id,
         'eventos_json': eventos_json,
     })
+
 
 
 
@@ -723,16 +924,30 @@ def metricas_usuarios(request):
 
 
 # Vista: Compartir tablero
+def email_to_key(email):
+    """Convierte un email a una clave segura para Firebase."""
+    return email.replace('.', ',').replace('@', '_at_')
+
+
 @firebase_login_required
 def compartir_tablero(request, tablero_id):
-    uid = request.session['firebase_uid']
-    tablero_ref = db.child("tableros").child(uid).child(tablero_id)
-    tablero = tablero_ref.get().val() or {}
+    uid_actual = request.session['firebase_uid']
+
+    # Obtener datos del tablero directamente (por uid actual y tablero_id)
+    tablero_ref = db.child("tableros").child(uid_actual).child(tablero_id)
+    tablero = tablero_ref.get().val()
+
+    if not tablero:
+        return JsonResponse({'success': False, 'error': 'No tienes permiso para compartir este tablero.'}, status=404)
+
+    # Validar que el usuario autenticado sea el propietario del tablero
+    propietario = tablero.get('propietario')
+    if propietario != uid_actual:
+        return JsonResponse({'success': False, 'error': 'No tienes permiso para compartir este tablero.'}, status=403)
 
     if request.method == 'POST':
         email_destino = request.POST.get('email')
         if email_destino:
-            # Buscar el uid del usuario que tenga ese email en la rama correcta (ejemplo: logins)
             usuarios = db.child("logins").get().val() or {}
             uid_invitado = None
             for u_id, info in usuarios.items():
@@ -740,21 +955,20 @@ def compartir_tablero(request, tablero_id):
                     uid_invitado = u_id
                     break
 
-            if not uid_invitado:
-                mensaje = f"No se encontró ningún usuario con el correo {email_destino}."
-                return render(request, 'tablero.html', {
+            if uid_invitado:
+                # Usuario ya registrado, se agrega directamente al tablero
+                db.child("tableros").child(uid_actual).child(tablero_id).child("invitados").update({
+                    uid_invitado: False
+                })
+            else:
+                # Usuario no registrado aún → guardar invitación pendiente con clave segura
+                email_key = email_to_key(email_destino)
+                db.child("invitaciones_pendientes").child(email_key).push({
                     'tablero_id': tablero_id,
-                    'tablero': tablero,
-                    'mensaje_compartir': mensaje,
-                    'mostrar_form_compartir': True,
+                    'propietario_uid': uid_actual
                 })
 
-            # Agregar el uid del invitado con estado False (pendiente de aprobación)
-            db.child("tableros").child(uid).child(tablero_id).child("invitados").update({
-                uid_invitado: False
-            })
-
-            # Construir la URL de solicitud
+            # Enviar el correo con el enlace (siempre)
             url_solicitud = request.build_absolute_uri(
                 reverse('solicitar_acceso_tablero', kwargs={
                     'tablero_id': tablero_id,
@@ -762,7 +976,6 @@ def compartir_tablero(request, tablero_id):
                 })
             )
 
-            # Enviar correo
             send_mail(
                 subject=f"Invitación para ver el tablero: {tablero.get('nombre', 'Tablero')}",
                 message=(
@@ -782,10 +995,12 @@ def compartir_tablero(request, tablero_id):
                 'mostrar_form_compartir': True,
             })
 
+    # Renderizar la vista normalmente si no es POST
     return render(request, 'tablero.html', {
         'tablero_id': tablero_id,
         'tablero': tablero,
     })
+
 
 
 # Vista: Solicitar acceso y aprobar automáticamente
@@ -807,7 +1022,6 @@ def solicitar_acceso_tablero(request, tablero_id, email):
                 return HttpResponse("<h2>No tienes una invitación para este tablero.</h2>")
 
     return HttpResponse("Tablero no encontrado.")
-
 
 
 @firebase_login_required

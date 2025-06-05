@@ -133,6 +133,7 @@
 <script>
     function eliminarTablero(tableroId) {
         if (!confirm('¿Estás seguro de que deseas eliminar este tablero?')) return;
+        if (!confirm('Esta acción es irreversible. ¿Realmente deseas eliminarlo?')) return;
 
         fetch("{% url 'listar_tableros' %}", {
             method: "POST",
