@@ -49,9 +49,8 @@ import base64
 
 signer = TimestampSigner()
 
-# Mi Tarea 
+
 # Vista para el registro de usuarios
-# Prueba 1
 def registro(request):
 
     if request.method == 'POST':
@@ -59,7 +58,6 @@ def registro(request):
         email = request.POST['email']
         password = request.POST['password']
         username = request.POST['username']
-
         # Combinar datos sensibles y firmarlos digitalmente
         data = f"{email}|{password}|{username}"
         signed_data = signer.sign(data)
