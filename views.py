@@ -34,6 +34,7 @@ from collections import defaultdict
 from django.contrib.auth import logout
 
 #importaciones para generar pdf
+#Pruebas
 from io import BytesIO
 from django.http import FileResponse, HttpResponseBadRequest
 from django.views.decorators.csrf import csrf_exempt
