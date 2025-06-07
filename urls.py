@@ -41,5 +41,7 @@ urlpatterns = [
     path('dashboard/eliminar/<uid>/', views.eliminar_usuario, name='eliminar_usuario'),
     # Formulario para simular el pago
     path('simular_pago/', views.simular_pago_formulario, name='simular_pago_formulario'),
-    path('procesar_pago/', views.procesar_pago_simulado, name='procesar_pago'),  
+    path('procesar_pago/', views.procesar_pago_simulado, name='procesar_pago'),
+    path('enviar_pdf/<str:tablero_id>/', views.enviar_pdf_al_duenio, name='enviar_pdf_al_duenio'),
+  
 ]

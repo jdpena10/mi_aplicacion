@@ -49,6 +49,13 @@ import base64
 signer = TimestampSigner()
 
 
+import io
+from django.core.mail import EmailMessage
+from django.views.decorators.csrf import csrf_exempt
+from reportlab.pdfgen import canvas
+
+
+
 # Vista para el registro de usuarios
 def registro(request):
 
@@ -801,6 +808,64 @@ def editar_tarjeta(request):
             return JsonResponse({'success': False, 'error': str(e)})
 
     return JsonResponse({'success': False, 'error': 'Método no permitido'})
+
+
+
+
+
+@csrf_exempt
+@firebase_login_required
+def enviar_pdf_al_duenio(request, tablero_id):
+    if request.method != 'POST':
+        return HttpResponse("Método no permitido", status=405)
+
+    try:
+        uid_actual = request.session.get('firebase_uid')
+
+        todos_tableros = db.child("tableros").get().val() or {}
+        uid_duenio = None
+
+        for uid_iter, tableros in todos_tableros.items():
+            if tablero_id in tableros:
+                uid_duenio = uid_iter
+                break
+
+        if not uid_duenio:
+            return HttpResponse("No se encontró el dueño del tablero.", status=404)
+
+        # Verificar que el usuario esté autorizado
+        invitados = todos_tableros[uid_duenio][tablero_id].get('invitados', {})
+        if uid_actual != uid_duenio and not invitados.get(uid_actual):
+            return HttpResponse("No tienes permiso para enviar este PDF.", status=403)
+
+        # Obtener email del dueño
+        email_duenio = db.child("logins").child(uid_duenio).child("email").get().val()
+        if not email_duenio:
+            return HttpResponse("No se encontró el correo del propietario.", status=404)
+
+        # Aquí deberías construir tu PDF real, pero como ejemplo simple:
+        buffer = io.BytesIO()
+        p = canvas.Canvas(buffer)
+        p.drawString(100, 750, f"PDF de gráficos para tablero {tablero_id}")
+        p.drawString(100, 700, "Este PDF fue generado automáticamente.")
+        p.showPage()
+        p.save()
+        buffer.seek(0)
+
+        # Enviar el correo con el PDF adjunto
+        email = EmailMessage(
+            subject='Gráficos exportados de tu tablero',
+            body=f"Adjunto encontrarás el PDF generado para el tablero {tablero_id}.",
+            to=[email_duenio]
+        )
+        email.attach(f"graficos_{tablero_id}.pdf", buffer.read(), 'application/pdf')
+        email.send()
+
+        return HttpResponse("PDF enviado exitosamente al dueño del tablero.")
+    except Exception as e:
+        print(f"Error al enviar PDF: {e}")
+        return HttpResponse("Hubo un error al enviar el PDF.", status=500)
+
 
 
 
