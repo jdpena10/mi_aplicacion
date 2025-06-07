@@ -50,6 +50,7 @@ signer = TimestampSigner()
 
 
 # Vista para el registro de usuarios
+# Prueba 1
 def registro(request):
 
     if request.method == 'POST':
