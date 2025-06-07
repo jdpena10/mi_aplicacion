@@ -37,6 +37,7 @@ INSTALLED_APPS = [
 #    'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'mi_aplicacion',
 ]
 
 MIDDLEWARE = [
@@ -142,7 +143,7 @@ LOGGING = {
         'file': {
             'level': 'ERROR',
             'class': 'logging.FileHandler',
-            'filename': '/var/www/app_python/logs/django_error.log',
+            'filename': '/var/www/gestion_de_tareas_Django/logs/django_error.log',
         },
     },
     'loggers': {

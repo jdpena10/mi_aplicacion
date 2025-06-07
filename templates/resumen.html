@@ -29,8 +29,6 @@
         <li><strong>Vencidas:</strong> {{ tareas_vencidas }}</li>
     </ul>
 
-
-
     <canvas id="graficaTareasPie"></canvas>
     <canvas id="graficaTareasBar"></canvas>
     <canvas id="graficaTareasScatter"></canvas>
@@ -127,7 +125,7 @@
             }
         });
 
-        // Función para generar el PDF
+        // Función para generar el PDF localmente
         async function descargarGraficosEnPDF() {
             const { jsPDF } = window.jspdf;
             const pdf = new jsPDF({
@@ -136,7 +134,6 @@
                 format: 'a4'
             });
 
-            // Factor de conversión: 1 pulgada = 25.4 mm; 1 pulgada = 96 px (estándar pantalla)
             const pxToMm = 25.4 / 96;
 
             const canvasIds = [
@@ -148,16 +145,12 @@
             for (let i = 0; i < canvasIds.length; i++) {
                 const { id, titulo } = canvasIds[i];
                 const canvas = document.getElementById(id);
-
-                // Usar tamaño real del canvas
                 const widthPx = canvas.width;
                 const heightPx = canvas.height;
 
-                // Crear canvas temporal para asegurar buena calidad
                 const tmpCanvas = document.createElement('canvas');
                 tmpCanvas.width = widthPx;
                 tmpCanvas.height = heightPx;
-
                 const ctx = tmpCanvas.getContext('2d');
                 ctx.drawImage(canvas, 0, 0, widthPx, heightPx);
 
@@ -168,7 +161,6 @@
                 pdf.setFontSize(14);
                 pdf.text(titulo, 15, 20);
 
-                // Convertir px a mm para el tamaño real en el PDF
                 const imgWidthMm = widthPx * pxToMm;
                 const imgHeightMm = heightPx * pxToMm;
 
@@ -178,43 +170,32 @@
             pdf.save('graficos_tareas.pdf');
         }
 
-
+        // Función para enviar PDF al dueño
+        function enviarPDFAlDuenio(tableroId) {
+            fetch(`/enviar_pdf/${tableroId}/`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({})
+            })
+            .then(response => response.text())
+            .then(data => {
+                alert(data);
+            })
+            .catch(error => {
+                alert('Error al enviar PDF al dueño.');
+                console.error(error);
+            });
+        }
     </script>
 
     <div class="centrado">
         <button onclick="descargarGraficosEnPDF()">Exportar a PDF</button>
+        <button onclick="enviarPDFAlDuenio('{{ tablero_id }}')">Enviar PDF al dueño</button>
     </div><br><br>
 </body>
 
 </html>
-{% if tipo_usuario == "premium" %}
-  <div class="centrado">
-      <form method="post" action="/enviar-pdf">
-          {% csrf_token %}
-          <button type="submit">Enviar resumen por correo (PDF)</button>
-      </form>
-  </div>
-{% else %}
-  <div class="centrado">
-      <button onclick="descargarGraficosEnPDF()">Exportar a PDF</button>
-  </div>
-{% endif %}
-</script>
 
-{% if tipo_usuario == "premium" %}
-  <div class="centrado">
-      <form method="post" action="/enviar-pdf">
-          {% csrf_token %}
-          <button type="submit">Enviar resumen por correo (PDF)</button>
-      </form>
-  </div>
-{% else %}
-  <div class="centrado">
-      <div class="centrado">
-          <button onclick="descargarGraficosEnPDF()">Exportar a PDF</button>
-      </div>
-  </div>
-{% endif %}
-
-</body>
-</html>
