@@ -125,7 +125,7 @@
             }
         });
 
-        // Función para generar el PDF localmente
+        // Exportar a PDF local
         async function descargarGraficosEnPDF() {
             const { jsPDF } = window.jspdf;
             const pdf = new jsPDF({
@@ -135,7 +135,6 @@
             });
 
             const pxToMm = 25.4 / 96;
-
             const canvasIds = [
                 { id: 'graficaTareasPie', titulo: 'Distribución de tareas (Pastel)' },
                 { id: 'graficaTareasBar', titulo: 'Distribución de tareas (Barras)' },
@@ -157,28 +156,64 @@
                 const imgData = tmpCanvas.toDataURL('image/png', 1.0);
 
                 if (i > 0) pdf.addPage();
-
                 pdf.setFontSize(14);
                 pdf.text(titulo, 15, 20);
-
                 const imgWidthMm = widthPx * pxToMm;
                 const imgHeightMm = heightPx * pxToMm;
-
                 pdf.addImage(imgData, 'PNG', 15, 30, imgWidthMm, imgHeightMm);
             }
 
             pdf.save('graficos_tareas.pdf');
         }
 
-        // Función para enviar PDF al dueño
-        function enviarPDFAlDuenio(tableroId) {
+        // Exportar a PDF y enviar al dueño
+        async function enviarPDFAlDuenio(tableroId) {
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF({
+                orientation: 'portrait',
+                unit: 'mm',
+                format: 'a4'
+            });
+
+            const pxToMm = 25.4 / 96;
+            const canvasIds = [
+                { id: 'graficaTareasPie', titulo: 'Distribución de tareas (Pastel)' },
+                { id: 'graficaTareasBar', titulo: 'Distribución de tareas (Barras)' },
+                { id: 'graficaTareasScatter', titulo: 'Gráfico de Dispersión' }
+            ];
+
+            for (let i = 0; i < canvasIds.length; i++) {
+                const { id, titulo } = canvasIds[i];
+                const canvas = document.getElementById(id);
+                const widthPx = canvas.width;
+                const heightPx = canvas.height;
+
+                const tmpCanvas = document.createElement('canvas');
+                tmpCanvas.width = widthPx;
+                tmpCanvas.height = heightPx;
+                const ctx = tmpCanvas.getContext('2d');
+                ctx.drawImage(canvas, 0, 0, widthPx, heightPx);
+
+                const imgData = tmpCanvas.toDataURL('image/png', 1.0);
+
+                if (i > 0) pdf.addPage();
+                pdf.setFontSize(14);
+                pdf.text(titulo, 15, 20);
+                const imgWidthMm = widthPx * pxToMm;
+                const imgHeightMm = heightPx * pxToMm;
+                pdf.addImage(imgData, 'PNG', 15, 30, imgWidthMm, imgHeightMm);
+            }
+
+            const pdfBlob = pdf.output('blob');
+            const formData = new FormData();
+            formData.append('pdf', pdfBlob, `graficos_${tableroId}.pdf`);
+
             fetch(`/enviar_pdf/${tableroId}/`, {
                 method: 'POST',
                 headers: {
-                    'X-CSRFToken': '{{ csrf_token }}',
-                    'Content-Type': 'application/json'
+                    'X-CSRFToken': '{{ csrf_token }}'
                 },
-                body: JSON.stringify({})
+                body: formData
             })
             .then(response => response.text())
             .then(data => {
@@ -198,4 +233,3 @@
 </body>
 
 </html>
-
