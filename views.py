@@ -48,7 +48,7 @@ import base64
 
 signer = TimestampSigner()
 
-
+# Mi Tarea 
 # Vista para el registro de usuarios
 # Prueba 1
 def registro(request):
