@@ -187,3 +187,34 @@
 </body>
 
 </html>
+{% if tipo_usuario == "premium" %}
+  <div class="centrado">
+      <form method="post" action="/enviar-pdf">
+          {% csrf_token %}
+          <button type="submit">Enviar resumen por correo (PDF)</button>
+      </form>
+  </div>
+{% else %}
+  <div class="centrado">
+      <button onclick="descargarGraficosEnPDF()">Exportar a PDF</button>
+  </div>
+{% endif %}
+</script>
+
+{% if tipo_usuario == "premium" %}
+  <div class="centrado">
+      <form method="post" action="/enviar-pdf">
+          {% csrf_token %}
+          <button type="submit">Enviar resumen por correo (PDF)</button>
+      </form>
+  </div>
+{% else %}
+  <div class="centrado">
+      <div class="centrado">
+          <button onclick="descargarGraficosEnPDF()">Exportar a PDF</button>
+      </div>
+  </div>
+{% endif %}
+
+</body>
+</html>
