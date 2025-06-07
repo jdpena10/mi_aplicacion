@@ -174,24 +174,36 @@ def login_view(request):
         email = request.POST['email']
         password = request.POST['password']
 
+        # 1. Validar existencia del correo en la Realtime Database
+        logins_ref = admin_db.reference('logins')
+        logins = logins_ref.get()
+
+        email_encontrado = False
+        if logins:
+            for key, login in logins.items():
+                if login.get('email', '').lower() == email.lower():
+                    email_encontrado = True
+                    break
+
+        if not email_encontrado:
+            messages.error(request, 'Cuenta no activada. Este correo no está registrado.')
+            return render(request, 'login.html')
+
         try:
-            # Intentar autenticar al usuario con email y password
+            # 2. Validar credenciales con Firebase Auth
             user = auth.sign_in_with_email_and_password(email, password)
 
-            # Guardar el UID y el ID Token en la sesión de Django
+            # 3. Guardar en la sesión
             request.session['firebase_uid'] = user['localId']
             request.session['firebase_id_token'] = user['idToken']
 
-            # Imprimir el UID para debugging (opcional)
             print(f"Sesión configurada para el usuario con UID: {user['localId']}")
-
-            # Redirigir al usuario a la página de inicio
             return redirect('inicio')
 
         except Exception as e:
             print(f"Error de autenticación: {e}")
-            #return render(request, 'login.html', {'error': 'Credenciales incorrectas.'})
-            messages.error(request, 'Correo o contraseña incorrectos.')
+            messages.error(request, 'Contraseña incorrecta.')
+            return render(request, 'login.html')
 
     return render(request, 'login.html')
 
@@ -402,18 +414,34 @@ def ver_tablero(request, tablero_id):
     # Obtener listas del tablero
     listas = tablero.get("listas", {})
 
+    # Procesar formulario POST
     if request.method == 'POST':
-        # Crear nueva lista dentro del tablero
-        nombre_lista = request.POST.get('nombre')
-        nueva_lista = {"nombre": nombre_lista}
-        db.child("tableros").child(uid_actual).child(tablero_id).child("listas").push(nueva_lista)
-        return redirect('ver_tablero', tablero_id=tablero_id)
+        print("POST recibido:", request.POST)
+
+        # Crear nueva lista
+        if 'nombre' in request.POST and 'lista_id' not in request.POST:
+            nombre_lista = request.POST.get('nombre')
+            nueva_lista = {"nombre": nombre_lista}
+            db.child("tableros").child(uid_actual).child(tablero_id).child("listas").push(nueva_lista)
+            return redirect('ver_tablero', tablero_id=tablero_id)
+
+        # Editar nombre de una lista existente
+        elif 'nuevo_nombre' in request.POST and 'lista_id' in request.POST:
+            lista_id = request.POST.get('lista_id')
+            nuevo_nombre = request.POST.get('nuevo_nombre')
+
+            print("Actualizando lista:", lista_id, "con nuevo nombre:", nuevo_nombre)
+
+            db.child("tableros").child(uid_actual).child(tablero_id).child("listas").child(lista_id).update({
+                "nombre": nuevo_nombre
+            })
+            return redirect('ver_tablero', tablero_id=tablero_id)
 
     return render(request, 'tablero.html', {
         'tablero_id': tablero_id,
         'tablero': tablero,
         'listas': listas,
-        'rol': rol, 
+        'rol': rol,
     })
 
 
@@ -450,49 +478,75 @@ def agregar_tarjeta(request, tablero_id, lista_id):
             descripcion = request.POST.get('descripcion')
             orden = request.POST.get('orden', 0)
             color = request.POST.get('color', '#ffffff')
-            fecha_limite_str = request.POST.get('fecha_limite')
+
+            # Obtener fechas y horas desde POST
+            fecha_inicio_str = request.POST.get('fecha_inicio')  # ejemplo: '2025-06-06'
+            hora_inicio_str = request.POST.get('hora_inicio')    # ejemplo: '08:00'
+
+            fecha_limite_str = request.POST.get('fecha_limite')  # ejemplo: '2025-06-08'
+            hora_limite_str = request.POST.get('hora_limite')    # ejemplo: '12:00'
+
+            # Parsear fechas completas
+            fecha_inicio_completa = None
+            fecha_limite_completa = None
+
+            try:
+                if fecha_inicio_str and hora_inicio_str:
+                    fecha_inicio_completa = datetime.datetime.strptime(
+                        f"{fecha_inicio_str} {hora_inicio_str}", '%Y-%m-%d %H:%M'
+                    )
+
+                if fecha_limite_str and hora_limite_str:
+                    fecha_limite_completa = datetime.datetime.strptime(
+                        f"{fecha_limite_str} {hora_limite_str}", '%Y-%m-%d %H:%M'
+                    )
+            except Exception as e:
+                print(f"Error al parsear fechas y horas: {e}")
 
             tarjeta = {
                 'titulo': titulo,
                 'descripcion': descripcion,
                 'orden': orden,
                 'color': color,
-                'fecha_limite': fecha_limite_str,
+                'fecha_inicio': f"{fecha_inicio_str} {hora_inicio_str}" if fecha_inicio_str and hora_inicio_str else None,
+                'fecha_limite': f"{fecha_limite_str} {hora_limite_str}" if fecha_limite_str and hora_limite_str else None,
                 'completada': False,
                 'email': user_email
             }
 
+            # Guardar tarjeta en la base de datos Firebase
             db.child("tableros").child(uid_duenio).child(tablero_id).child("listas").child(lista_id).child("tarjetas").push(tarjeta)
 
-            # Calcular tiempo restante
+            # Calcular tiempo restante entre inicio y fecha límite
             dias_restantes = None
             horas_restantes = None
             minutos_restantes = None
 
-            if fecha_limite_str:
-                try:
-                    fecha_limite = datetime.datetime.strptime(fecha_limite_str, '%Y-%m-%d').date()
-                    hoy = datetime.date.today()
+            zona_colombia = pytz.timezone("America/Bogota")
 
-                    # Zona horaria Colombia
-                    zona_colombia = pytz.timezone("America/Bogota")
-                    ahora = datetime.datetime.now(zona_colombia)
+            if fecha_inicio_completa and fecha_limite_completa:
+                # Localizar o convertir las fechas a zona horaria de Colombia
+                if fecha_inicio_completa.tzinfo is None:
+                    fecha_inicio_completa = zona_colombia.localize(fecha_inicio_completa)
+                else:
+                    fecha_inicio_completa = fecha_inicio_completa.astimezone(zona_colombia)
 
-                    if fecha_limite >= hoy:
-                        fin_del_dia = datetime.datetime.combine(fecha_limite, datetime.time(23, 59, 59))
-                        fin_del_dia = zona_colombia.localize(fin_del_dia)
+                if fecha_limite_completa.tzinfo is None:
+                    fecha_limite_completa = zona_colombia.localize(fecha_limite_completa)
+                else:
+                    fecha_limite_completa = fecha_limite_completa.astimezone(zona_colombia)
 
-                        delta = fin_del_dia - ahora
-                        total_segundos = delta.total_seconds()
+                # Calcular diferencia si la fecha límite es mayor o igual a la fecha inicio
+                if fecha_limite_completa >= fecha_inicio_completa:
+                    delta = fecha_limite_completa - fecha_inicio_completa
+                    total_segundos = int(delta.total_seconds())
 
-                        dias_restantes = int(total_segundos // 86400)
-                        resto_dia = total_segundos % 86400
-                        horas_restantes = int(resto_dia // 3600)
-                        minutos_restantes = int((resto_dia % 3600) // 60)
-                    else:
-                        dias_restantes = horas_restantes = minutos_restantes = 0
-                except Exception as e:
-                    print(f"Error al parsear fecha_limite: {e}")
+                    dias_restantes = total_segundos // 86400
+                    resto_dia = total_segundos % 86400
+                    horas_restantes = resto_dia // 3600
+                    minutos_restantes = (resto_dia % 3600) // 60
+                else:
+                    dias_restantes = horas_restantes = minutos_restantes = 0
 
             # Obtener UID del propietario desde la estructura del tablero
             propietario_uid = db.child("tableros").child(uid_duenio).child(tablero_id).child("propietario").get().val()
@@ -508,10 +562,11 @@ def agregar_tarjeta(request, tablero_id, lista_id):
                     f"Se ha agregado una nueva tarjeta en tu tablero:\n\n"
                     f"Título: {titulo}\n"
                     f"Descripción: {descripcion}\n"
-                    f"Fecha límite: {fecha_limite_str or 'No definida'}\n"
+                    f"Fecha de inicio: {tarjeta['fecha_inicio'] or 'No definida'}\n"
+                    f"Fecha límite: {tarjeta['fecha_limite'] or 'No definida'}\n"
                 )
 
-                if dias_restantes is not None and horas_restantes is not None:
+                if dias_restantes is not None and horas_restantes is not None and minutos_restantes is not None:
                     if dias_restantes > 0:
                         mensaje += f"Tiempo restante: {dias_restantes} día(s), {horas_restantes} hora(s), {minutos_restantes} minuto(s).\n"
                     else:
@@ -532,6 +587,7 @@ def agregar_tarjeta(request, tablero_id, lista_id):
                 'error': str(e)
             })
 
+    # Si no es POST, renderiza la plantilla para agregar tarjeta
     return render(request, 'agregar_tarjeta.html', {
         'tablero_id': tablero_id,
         'lista_id': lista_id

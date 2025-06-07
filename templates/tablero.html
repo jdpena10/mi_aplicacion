@@ -22,7 +22,7 @@
 </a>
 
 <a href="{% url 'simular_pago_formulario' %}" class="volver-link" style="margin-left: 500px; text-decoration: none;">
-   🏅 Conviertete en usuario Premium
+    🏅 Conviertete en usuario Premium
 </a>
 
 {% if mensaje_compartir %}
@@ -34,10 +34,14 @@
     {% for lista_id, lista in listas.items %}
     <div class="lista" data-id="{{ lista_id }}">
         <!-- Formulario para eliminar la lista -->
-        <form method="POST" action="{% url 'eliminar_lista' tablero_id=tablero_id lista_id=lista_id %}" style="text-align: right;" onsubmit="return confirmarEliminacionLista();">
+        <form method="POST" action="{% url 'eliminar_lista' tablero_id=tablero_id lista_id=lista_id %}"
+            style="text-align: right;" onsubmit="return confirmarEliminacionLista();">
             {% csrf_token %}
             <button type="submit" class="btn-eliminar-lista">🗑️</button>
         </form>
+
+
+
 
         <h4 class="lista-titulo">{{ lista.nombre }}</h4>
 
@@ -65,24 +69,72 @@
             {% empty %}
             <p>No hay tarjetas.</p>
             {% endfor %}
+
+            <!-- Texto con nombre de la lista y botón Editar -->
+            <div class="nombre-lista" id="nombre-lista-{{ lista_id }}">
+                <button type="button" onclick="mostrarEdicionLista('{{ lista_id }}')">🗒️ Renombrar lista</button>
+            </div>
+
+            <!-- Formulario para editar el nombre de la lista (oculto inicialmente) -->
+            <form method="POST" action="{% url 'ver_tablero' tablero_id=tablero_id %}"
+                style="margin-bottom: 10px; display: none;" id="form-editar-lista-{{ lista_id }}">
+                {% csrf_token %}
+                <input type="hidden" name="lista_id" value="{{ lista_id }}">
+                <input type="text" name="nuevo_nombre" value="{{ lista.nombre }}" class="input-editar-lista">
+                <button type="submit" class="btn-guardar-lista">💾 Guardar</button>
+                <button type="button" onclick="cancelarEdicionLista('{{ lista_id }}')">❌ Cancelar</button>
+            </form>
+
         </div>
 
         <!-- Mostrar formulario para agregar tarjeta -->
         <button class="btn-mostrar-formulario" onclick="mostrarFormularioTarjeta('{{ lista_id }}')">➕ Agregar
             Tarjeta</button>
 
-        <!-- Formulario para agregar tarjeta -->
+        <!-- Formulario para agregar tarjeta actualizado -->
         <form method="POST" action="{% url 'agregar_tarjeta' tablero_id=tablero_id lista_id=lista_id %}"
             class="formulario-tarjeta" id="formulario-{{ lista_id }}" style="display: none;">
             {% csrf_token %}
-            <input type="text" name="titulo" placeholder="Título" required>
-            <textarea name="descripcion" placeholder="Descripción" rows="2" required></textarea>
-            <span>Seleccione un color:</span>
-            <input type="color" name="color" value="#ffffff" required>
-            <span>Seleccione una fecha limite para la tarea:</span>
-            <input type="date" name="fecha_limite" required>
+
+            <label for="titulo-{{ lista_id }}">Título <span style="color:red;">*</span></label>
+            <input type="text" id="titulo-{{ lista_id }}" name="titulo" placeholder="Título de la tarjeta" required
+                title="Ingrese el título de la tarjeta.">
+
+            <label for="descripcion-{{ lista_id }}">Descripción <span style="color:red;">*</span></label>
+            <textarea id="descripcion-{{ lista_id }}" name="descripcion" placeholder="Descripción de la tarjeta"
+                rows="2" required title="Ingrese una descripción breve para la tarjeta."></textarea>
+
+            <label for="color-{{ lista_id }}">Seleccione un color <span style="color:red;">*</span></label>
+            <input type="color" id="color-{{ lista_id }}" name="color" value="#ffffff" required
+                title="Seleccione un color para identificar visualmente la tarjeta.">
+
+            <fieldset style="border: 1px solid #ccc; padding: 10px; margin-top: 1em;">
+                <legend>Fecha y hora de inicio <span style="color:red;">*</span></legend>
+
+                <label for="fecha_inicio-{{ lista_id }}">Fecha de inicio:</label>
+                <input type="date" id="fecha_inicio-{{ lista_id }}" name="fecha_inicio" required
+                    title="Seleccione la fecha de inicio de la tarjeta.">
+
+                <label for="hora_inicio-{{ lista_id }}">Hora de inicio:</label>
+                <input type="time" id="hora_inicio-{{ lista_id }}" name="hora_inicio" required
+                    title="Seleccione la hora de inicio en formato 24 horas (ejemplo: 14:30).">
+            </fieldset>
+
+            <fieldset style="border: 1px solid #ccc; padding: 10px; margin-top: 1em;">
+                <legend>Fecha y hora límite <span style="color:red;">*</span></legend>
+
+                <label for="fecha_limite-{{ lista_id }}">Fecha límite:</label>
+                <input type="date" id="fecha_limite-{{ lista_id }}" name="fecha_limite" required
+                    title="Seleccione la fecha límite para completar la tarjeta.">
+
+                <label for="hora_limite-{{ lista_id }}">Hora límite:</label>
+                <input type="time" id="hora_limite-{{ lista_id }}" name="hora_limite" required
+                    title="Seleccione la hora límite en formato 24 horas (ejemplo: 18:00).">
+            </fieldset>
+
             <input type="hidden" name="orden" value="0">
-            <button type="submit" class="btn-agregar">➕ Agregar</button>
+
+            <button type="submit" class="btn-agregar" style="margin-top: 1em;">➕ Agregar</button>
         </form>
     </div>
     {% endfor %}
@@ -105,26 +157,64 @@
             <button type="submit">Enviar Invitación</button>
         </form>
     </div>
-
 </div>
 
 <!-- Modal de edición de tarjeta -->
 <div id="modal-editar-tarjeta" style="display: none;">
     <div class="modal-contenido">
         <h3>Editar Tarjeta</h3>
-        <form id="formulario-editar-tarjeta">
+        <form id="formulario-editar-tarjeta" method="POST">
             {% csrf_token %}
-            <input type="text" id="editar-titulo" name="titulo" placeholder="Título" required><br>
-            <textarea id="editar-descripcion" name="descripcion" placeholder="Descripción" rows="2"></textarea><br>
-            <input type="color" id="editar-color" name="color"><br>
-            <input type="date" id="editar-fecha-limite" name="fecha_limite"><br>
-            <input type="checkbox" id="editar-completada" name="completada">
-            <label for="editar-completada">Marcar como completada</label><br>
-            <button type="submit" class="btn-editar">Guardar Cambios</button>
+
+            <label for="editar-titulo">Título <span style="color:red;">*</span></label>
+            <input type="text" id="editar-titulo" name="titulo" placeholder="Título de la tarjeta" required
+                title="Ingrese el nuevo título de la tarjeta.">
+
+            <label for="editar-descripcion">Descripción <span style="color:red;">*</span></label>
+            <textarea id="editar-descripcion" name="descripcion" placeholder="Descripción de la tarjeta" rows="2"
+                required title="Ingrese una nueva descripción para la tarjeta."></textarea>
+
+            <label for="editar-color">Seleccione un color <span style="color:red;">*</span></label>
+            <input type="color" id="editar-color" name="color" required
+                title="Seleccione un color para identificar visualmente la tarjeta.">
+
+            <!-- <fieldset style="border: 1px solid #ccc; padding: 10px; margin-top: 1em;">
+                <legend>Fecha y hora de inicio <span style="color:red;">*</span></legend>
+
+                <label for="editar-fecha-inicio">Fecha de inicio:</label>
+                <input type="date" id="editar-fecha-inicio" name="fecha_inicio" required
+                    title="La fecha de inicio no se puede modificar.">
+
+                <label for="editar-hora-inicio">Hora de inicio:</label>
+                <input type="time" id="editar-hora-inicio" name="hora_inicio" required
+                    title="La hora de inicio no se puede modificar.">
+            </fieldset>
+
+            <fieldset style="border: 1px solid #ccc; padding: 10px; margin-top: 1em;">
+                <legend>Fecha y hora límite <span style="color:red;">*</span></legend>
+
+                <label for="editar-fecha-limite">Fecha límite:</label>
+                <input type="date" id="editar-fecha-limite" name="fecha_limite" required
+                    title="Seleccione la nueva fecha límite.">
+
+                <label for="editar-hora-limite">Hora límite:</label>
+                <input type="time" id="editar-hora-limite" name="hora_limite" required
+                    title="Seleccione la nueva hora límite.">
+            </fieldset>-->
+
+            <label for="editar-completada" style="margin-top: 1em;">
+                <input type="checkbox" id="editar-completada" name="completada">
+                Marcar como completada
+            </label><br>
+
+            <!-- Botones -->
+            <button type="submit" class="btn-editar" style="margin-top: 1em;">Guardar Cambios</button>
             <button type="button" class="btn-cerrar" onclick="cerrarModal()">Cancelar</button>
         </form>
     </div>
 </div>
+
+
 
 <style>
     body {
@@ -305,23 +395,67 @@
 
 <script>
 
-    // Función para crear fecha sin hora a partir de string "YYYY-MM-DD"
-    function soloFecha(dateStr) {
-        const partes = dateStr.split('-'); 
-        return new Date(partes[0], partes[1] - 1, partes[2]); 
+    function mostrarEdicionLista(listaId) {
+        document.getElementById(`nombre-lista-${listaId}`).style.display = 'none';
+        document.getElementById(`form-editar-lista-${listaId}`).style.display = 'block';
     }
 
-    document.addEventListener("DOMContentLoaded", function () {
-      const hoy = new Date();
-      const yyyy = hoy.getFullYear();
-      const mm = String(hoy.getMonth() + 1).padStart(2, '0'); // Meses de 0-11
-      const dd = String(hoy.getDate()).padStart(2, '0');
-      const fechaMinima = `${yyyy}-${mm}-${dd}`;
+    function cancelarEdicionLista(listaId) {
+        document.getElementById(`form-editar-lista-${listaId}`).style.display = 'none';
+        document.getElementById(`nombre-lista-${listaId}`).style.display = 'block';
+    }
 
-      // Aplica la fecha mínima a todos los inputs de tipo date
-      document.querySelectorAll("input[type='date']").forEach(input => {
-        input.min = fechaMinima;
-      });
+    // Marcar tarjetas vencidas al cargar la página
+    document.addEventListener("DOMContentLoaded", function () {
+        const tarjetas = document.querySelectorAll('.tarjeta');
+
+        tarjetas.forEach(function (tarjeta) {
+            const fechaLimiteStr = tarjeta.getAttribute('data-fecha-limite');
+            const completada = tarjeta.getAttribute('data-completada') === 'true';
+
+            if (fechaLimiteStr && !completada) {
+                const fechaLimite = new Date(fechaLimiteStr);
+                const ahora = new Date();
+
+                if (fechaLimite < ahora) {
+                    // Verifica si ya tiene el badge para no duplicarlo
+                    if (!tarjeta.querySelector('.vencida-badge')) {
+                        const badge = document.createElement('span');
+                        badge.className = 'badge vencida-badge';
+                        badge.innerText = '⛔ Vencida';
+                        tarjeta.prepend(badge);
+                    }
+                }
+            }
+        });
+    });
+
+    function soloFecha(fechaString) {
+        if (!fechaString) return new Date("invalid");
+
+        // Si el formato es "YYYY-MM-DD HH:MM", lo convertimos a "YYYY-MM-DDTHH:MM"
+        const normalizado = fechaString.replace(" ", "T");
+        const dateObj = new Date(normalizado);
+
+        if (isNaN(dateObj)) {
+            console.warn("Fecha inválida:", fechaString);
+        }
+
+        return new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate());
+    }
+
+
+    document.addEventListener("DOMContentLoaded", function () {
+        const hoy = new Date();
+        const yyyy = hoy.getFullYear();
+        const mm = String(hoy.getMonth() + 1).padStart(2, '0'); // Meses de 0-11
+        const dd = String(hoy.getDate()).padStart(2, '0');
+        const fechaMinima = `${yyyy}-${mm}-${dd}`;
+
+        // Aplica la fecha mínima a todos los inputs de tipo date
+        document.querySelectorAll("input[type='date']").forEach(input => {
+            input.min = fechaMinima;
+        });
     });
 
 
@@ -349,32 +483,57 @@
             document.getElementById('modal-editar-tarjeta').style.display = "none";
         }
 
-        // Editar tarjeta
+
         window.editarTarjeta = function (tarjetaId, listaId, tableroId) {
             const tarjeta = document.querySelector(`.tarjeta[data-id='${tarjetaId}']`);
             const titulo = tarjeta.querySelector('strong').innerText;
             const descripcion = tarjeta.querySelector('small').innerText;
             const color = tarjeta.style.backgroundColor || '#ffffff';
+            const fechaInicio = tarjeta.getAttribute('data-fecha-inicio');
+            const horaInicio = tarjeta.getAttribute('data-hora-inicio');
             const fechaLimite = tarjeta.getAttribute('data-fecha-limite');
+            const horaLimite = tarjeta.getAttribute('data-hora-limite');
             const completada = tarjeta.getAttribute('data-completada') === 'true';
 
+            // Rellenar campos del formulario
             document.getElementById('editar-titulo').value = titulo;
             document.getElementById('editar-descripcion').value = descripcion;
             document.getElementById('editar-color').value = rgbToHex(color);
+
+            /*document.getElementById('editar-fecha-inicio').value = fechaInicio;
+            document.getElementById('editar-hora-inicio').value = horaInicio;
             document.getElementById('editar-fecha-limite').value = fechaLimite;
+            document.getElementById('editar-hora-limite').value = horaLimite;
+
+            // Deshabilitar edición de fechas y horas
+            document.getElementById('editar-fecha-inicio').disabled = true;
+            document.getElementById('editar-hora-inicio').disabled = true;
+            document.getElementById('editar-fecha-limite').disabled = true;
+            document.getElementById('editar-hora-limite').disabled = true;*/
+
             document.getElementById('editar-completada').checked = completada;
 
+            // Mostrar modal
             document.getElementById('modal-editar-tarjeta').style.display = "block";
 
+            // Manejar envío del formulario
             document.getElementById('formulario-editar-tarjeta').onsubmit = function (event) {
                 event.preventDefault();
+
                 const newTitulo = document.getElementById('editar-titulo').value;
                 const newDescripcion = document.getElementById('editar-descripcion').value;
                 const newColor = document.getElementById('editar-color').value;
-                const newFechaLimite = document.getElementById('editar-fecha-limite').value;
+                // Tomar las fechas y horas originales porque no pueden editarse
+                const newFechaInicio = fechaInicio;
+                const newHoraInicio = horaInicio;
+                const newFechaLimite = fechaLimite;
+                const newHoraLimite = horaLimite;
                 const nuevaCompletada = document.getElementById('editar-completada').checked;
                 const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
 
+                // No hacemos validaciones de fecha/hora porque no se pueden editar
+
+                // Enviar datos con fechas originales
                 fetch('/editar_tarjeta/', {
                     method: 'POST',
                     headers: {
@@ -388,7 +547,10 @@
                         titulo: newTitulo,
                         descripcion: newDescripcion,
                         color: newColor,
+                        fecha_inicio: newFechaInicio,
+                        hora_inicio: newHoraInicio,
                         fecha_limite: newFechaLimite,
+                        hora_limite: newHoraLimite,
                         completada: nuevaCompletada
                     })
                 })
@@ -398,22 +560,14 @@
                             tarjeta.querySelector('strong').innerText = newTitulo;
                             tarjeta.querySelector('small').innerText = newDescripcion;
                             tarjeta.style.backgroundColor = newColor;
+                            tarjeta.setAttribute('data-fecha-inicio', newFechaInicio);
+                            tarjeta.setAttribute('data-hora-inicio', newHoraInicio);
                             tarjeta.setAttribute('data-fecha-limite', newFechaLimite);
+                            tarjeta.setAttribute('data-hora-limite', newHoraLimite);
                             tarjeta.setAttribute('data-completada', nuevaCompletada);
 
-                            // Mostrar o quitar badge de completada
                             let existingBadge = tarjeta.querySelector('.badge-completada');
                             let existingVencidaBadge = tarjeta.querySelector('.vencida-badge');
-
-                            // Usar la función soloFecha para comparar sin horas
-                            const fechaLimiteDate = soloFecha(newFechaLimite);
-                            const hoy = new Date();
-                            const hoySinHora = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
-
-                            // --- Logs para debug ---
-                            console.log('fechaLimite original:', newFechaLimite);
-                            console.log('fechaLimiteDate:', fechaLimiteDate.toISOString());
-                            console.log('hoySinHora:', hoySinHora.toISOString());
 
                             if (nuevaCompletada) {
                                 if (!existingBadge) {
@@ -426,13 +580,19 @@
                                 existingBadge.remove();
                             }
 
-                            // Verificar si la tarjeta está vencida usando fechas sin hora
-                            if (fechaLimiteDate < hoySinHora) {
-                                if (!existingVencidaBadge) {
-                                    const badge = document.createElement('span');
-                                    badge.className = 'badge vencida-badge';
-                                    badge.innerText = '⛔ Vencida';
-                                    tarjeta.prepend(badge);
+                            if (newFechaLimite && !nuevaCompletada) {
+                                const fechaLimiteObj = new Date(newFechaLimite + 'T' + (newHoraLimite || '23:59'));
+                                const ahoraObj = new Date();
+
+                                if (fechaLimiteObj < ahoraObj) {
+                                    if (!existingVencidaBadge) {
+                                        const badge = document.createElement('span');
+                                        badge.className = 'badge vencida-badge';
+                                        badge.innerText = '⛔ Vencida';
+                                        tarjeta.prepend(badge);
+                                    }
+                                } else if (existingVencidaBadge) {
+                                    existingVencidaBadge.remove();
                                 }
                             } else if (existingVencidaBadge) {
                                 existingVencidaBadge.remove();
@@ -440,6 +600,8 @@
 
                             alert('Tarjeta actualizada con éxito');
                             cerrarModal();
+                            // Recargar página para reflejar cambios
+                            location.reload();
                         } else {
                             alert('Error al actualizar la tarjeta');
                         }
@@ -450,6 +612,7 @@
                     });
             };
         };
+
 
         // Eliminar tarjeta
         window.eliminarTarjeta = function (tarjetaId, listaId, tableroId) {
@@ -488,31 +651,7 @@
             }
         };
 
-        // Marcar tarjetas vencidas al cargar la página
-        const tarjetas = document.querySelectorAll('.tarjeta');
-        tarjetas.forEach(function (tarjeta) {
-            const fechaLimite = tarjeta.getAttribute('data-fecha-limite');
-            const completada = tarjeta.getAttribute('data-completada') === 'true';
 
-            if (fechaLimite && !completada) {
-                // Usar la función soloFecha para comparar sin horas
-                const fechaLimiteDate = soloFecha(fechaLimite);
-                const hoy = new Date();
-                const hoySinHora = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
-
-                // --- Logs para debug ---
-                console.log('fechaLimite original:', fechaLimite);
-                console.log('fechaLimiteDate:', fechaLimiteDate.toISOString());
-                console.log('hoySinHora:', hoySinHora.toISOString());
-
-                if (fechaLimiteDate < hoySinHora) {
-                    const badge = document.createElement('span');
-                    badge.className = 'badge vencida-badge';
-                    badge.innerText = '⛔ Vencida';
-                    tarjeta.prepend(badge);
-                }
-            }
-        });
 
         // Exponer funciones globales necesarias
         window.mostrarFormularioTarjeta = mostrarFormularioTarjeta;
@@ -571,6 +710,110 @@
         });
     });
 
+
+    document.addEventListener('DOMContentLoaded', function () {
+        const formularios = document.querySelectorAll('.formulario-tarjeta');
+
+        formularios.forEach(formulario => {
+            const listaId = formulario.id.replace('formulario-', '');
+
+            const fechaInicioElem = document.getElementById(`fecha_inicio-${listaId}`);
+            const horaInicioElem = document.getElementById(`hora_inicio-${listaId}`);
+            const fechaLimiteElem = document.getElementById(`fecha_limite-${listaId}`);
+            const horaLimiteElem = document.getElementById(`hora_limite-${listaId}`);
+
+            // Función para actualizar el min de hora según la fecha seleccionada
+            function actualizarMinHora(fechaElem, horaElem) {
+                if (!fechaElem || !horaElem) return;
+
+                const hoyStr = new Date().toISOString().slice(0, 10);
+                if (fechaElem.value === hoyStr) {
+                    // Hora actual en formato HH:mm
+                    const ahora = new Date();
+                    const hh = String(ahora.getHours()).padStart(2, '0');
+                    const mm = String(ahora.getMinutes()).padStart(2, '0');
+                    horaElem.min = `${hh}:${mm}`;
+                } else {
+                    // Quitar restricción
+                    horaElem.removeAttribute('min');
+                }
+            }
+
+            // Llamar a la función cuando cambie la fecha de inicio o límite
+            if (fechaInicioElem && horaInicioElem) {
+                fechaInicioElem.addEventListener('change', () => actualizarMinHora(fechaInicioElem, horaInicioElem));
+                // Ejecutar al cargar la página para que tome efecto si ya hay fecha
+                actualizarMinHora(fechaInicioElem, horaInicioElem);
+            }
+
+            if (fechaLimiteElem && horaLimiteElem) {
+                fechaLimiteElem.addEventListener('change', () => actualizarMinHora(fechaLimiteElem, horaLimiteElem));
+                actualizarMinHora(fechaLimiteElem, horaLimiteElem);
+            }
+
+            // Validación al enviar
+            formulario.addEventListener('submit', function (event) {
+                if (!fechaInicioElem || !horaInicioElem || !fechaLimiteElem || !horaLimiteElem) {
+                    console.warn(`⚠️ Elementos no encontrados para lista_id: ${listaId}`);
+                    return;
+                }
+
+                const fechaInicio = fechaInicioElem.value;
+                const horaInicio = horaInicioElem.value;
+                const fechaLimite = fechaLimiteElem.value;
+                const horaLimite = horaLimiteElem.value;
+
+                if (fechaInicio && fechaLimite && horaInicio && horaLimite) {
+
+                    // Nueva validación: fecha límite >= fecha inicio
+                    if (new Date(fechaLimite) < new Date(fechaInicio)) {
+                        alert("⚠️ La fecha límite no puede ser menor que la fecha de inicio.");
+                        event.preventDefault();
+                        return;
+                    }
+
+                    // Validar hora >= hora actual si fecha inicio es hoy
+                    if (fechaInicio === new Date().toISOString().slice(0, 10)) {
+                        const ahora = new Date();
+                        const horaInicioDate = new Date(`2000-01-01T${horaInicio}`);
+                        const horaActualDate = new Date(`2000-01-01T${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`);
+
+                        if (horaInicioDate < horaActualDate) {
+                            alert("⚠️ La hora de inicio no puede ser menor a la hora actual para la fecha de hoy.");
+                            event.preventDefault();
+                            return;
+                        }
+                    }
+
+                    // Validar hora >= hora actual si fecha límite es hoy
+                    if (fechaLimite === new Date().toISOString().slice(0, 10)) {
+                        const ahora = new Date();
+                        const horaLimiteDate = new Date(`2000-01-01T${horaLimite}`);
+                        const horaActualDate = new Date(`2000-01-01T${String(ahora.getHours()).padStart(2, '0')}:${String(ahora.getMinutes()).padStart(2, '0')}`);
+
+                        if (horaLimiteDate < horaActualDate) {
+                            alert("⚠️ La hora límite no puede ser menor a la hora actual para la fecha de hoy.");
+                            event.preventDefault();
+                            return;
+                        }
+                    }
+
+                    // Validar que hora inicio < hora limite si fechas iguales
+                    if (fechaInicio === fechaLimite) {
+                        const inicio = new Date(`2000-01-01T${horaInicio}`);
+                        const fin = new Date(`2000-01-01T${horaLimite}`);
+
+                        if (inicio >= fin) {
+                            alert("⚠️ Cuando la fecha de inicio y la fecha límite son iguales, la hora de inicio debe ser menor a la hora límite.");
+                            event.preventDefault();
+                            return;
+                        }
+                    }
+                }
+            });
+        });
+    });
+
     // Confirmación doble para eliminar lista
     function confirmarEliminacionLista() {
         if (confirm("¿Estás seguro de que deseas eliminar toda la lista y todas sus tarjetas?")) {
@@ -580,13 +823,7 @@
     }
     window.confirmarEliminacionLista = confirmarEliminacionLista;
 
+
 </script>
 
 {% endblock %}
-
-
-
-
-
-
-
